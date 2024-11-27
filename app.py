@@ -126,7 +126,8 @@ class Miner:
                         "method": "mining.submit",
                         "params": [self.wallet, job_id, extranonce2, ntime, f"{nonce:08x}"]
                     })
-                    break  # Nếu tìm thấy block hợp lệ, dừng lại
+                    # Không dừng lại, tiếp tục đào
+                    nonce += 1
 
                 hashes_this_cycle += 1  # Đếm số hash trong vòng này
 
