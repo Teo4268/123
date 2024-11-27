@@ -14,7 +14,7 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+        self.difficulty = None  # Để độ khó động
         self.running = True
 
     def connect(self):
@@ -78,7 +78,8 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = int(self.job[7], 16)  # Lấy độ khó từ job (dùng số hex)
+                    # Lấy độ khó từ job (sử dụng giá trị hex và chuyển thành integer)
+                    self.difficulty = int(self.job[7], 16)
                     print(f"Nhận công việc mới: {self.job[0]} với độ khó {self.difficulty}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
@@ -88,7 +89,7 @@ class Miner:
         """Thực hiện tính toán hash"""
         nonce = 0  # Bắt đầu từ nonce = 0
         while self.running and nonce <= 4294967295:
-            if self.job:
+            if self.job and self.difficulty:
                 job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
                 extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
                 coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
@@ -99,23 +100,27 @@ class Miner:
                 for branch in merkle_branch:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
 
+                # Xây dựng blockheader: Phiên bản + previous block hash + merkle root + nbits + ntime + nonce
                 blockheader = version + prevhash + merkle_root + nbits + ntime + f"{nonce:08x}"
+                
+                # Tính toán block hash
                 blockhash = getPoWHash(bytes.fromhex(blockheader))
 
-                # Kiểm tra nếu hash nhỏ hơn độ khó
+                # So sánh blockhash với độ khó động
                 block_hash_int = int(blockhash.hex(), 16)
+
+                # In ra thông tin mỗi khi nonce không hợp lệ
+                print(f"Block Hash: {blockhash.hex()} - Hash Int: {block_hash_int} - Difficulty: {self.difficulty}")
+
+                # So sánh blockhash với độ khó
                 if block_hash_int < self.difficulty:
-                    print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
+                    print(f"[Thread {thread_id}] Đào được block hợp lệ! {blockhash.hex()}")
                     self.send_json({
                         "id": 4,
                         "method": "mining.submit",
                         "params": [self.wallet, job_id, extranonce2, ntime, f"{nonce:08x}"]
                     })
                     break  # Nếu tìm thấy block hợp lệ, dừng lại
-
-                # In ra thông tin mỗi khi nonce không hợp lệ
-                else:
-                    print(f"[Thread {thread_id}] Hash không hợp lệ với nonce {nonce}: {blockhash.hex()}")
 
             nonce += 1  # Tăng nonce sau mỗi vòng lặp
 
