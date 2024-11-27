@@ -86,29 +86,38 @@ class Miner:
 
     def mine(self, thread_id):
         """Thực hiện tính toán hash"""
-        while self.running:
+        nonce = 0  # Bắt đầu từ nonce = 0
+        while self.running and nonce <= 4294967295:
             if self.job:
                 job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
                 extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
                 coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
                 coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
                 merkle_root = coinbase_hash_bin.hex()
+                
+                # Tính toán merkle root
                 for branch in merkle_branch:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
-                
-                blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
+
+                blockheader = version + prevhash + merkle_root + nbits + ntime + f"{nonce:08x}"
                 blockhash = getPoWHash(bytes.fromhex(blockheader))
-                
+
                 # Kiểm tra nếu hash nhỏ hơn độ khó
-                if int(blockhash.hex(), 16) < self.difficulty:
+                block_hash_int = int(blockhash.hex(), 16)
+                if block_hash_int < self.difficulty:
                     print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
                     self.send_json({
                         "id": 4,
                         "method": "mining.submit",
-                        "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
+                        "params": [self.wallet, job_id, extranonce2, ntime, f"{nonce:08x}"]
                     })
+                    break  # Nếu tìm thấy block hợp lệ, dừng lại
+
+                # In ra thông tin mỗi khi nonce không hợp lệ
                 else:
-                    print(f"[Thread {thread_id}] Hash: {blockhash.hex()} không đạt yêu cầu.")
+                    print(f"[Thread {thread_id}] Hash không hợp lệ với nonce {nonce}: {blockhash.hex()}")
+
+            nonce += 1  # Tăng nonce sau mỗi vòng lặp
 
     def start(self):
         """Bắt đầu đào coin"""
