@@ -86,28 +86,41 @@ class Miner:
 
     def mine(self, thread_id):
         """Thực hiện tính toán hash"""
-        while self.running:
-            if self.job:
-                job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
-                extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
-                coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
-                coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
-                merkle_root = coinbase_hash_bin.hex()
-                for branch in merkle_branch:
-                    merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
-                blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
-                blockhash = getPoWHash(bytes.fromhex(blockheader))
-                if int(blockhash.hex(), 16) < self.difficulty:
-                    print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
-                    self.send_json({
-                        "id": 4,
-                        "method": "mining.submit",
-                        "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
-                    })
-                else:
-                    print(f"[Thread {thread_id}] Hash: {blockhash.hex()} không đạt yêu cầu.")
-
-    def start(self):
+while self.running:
+    if self.job:
+        job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
+        # Tạo extranonce2 sao cho đúng chiều dài
+        extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
+        
+        # Tạo coinbase
+        coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
+        
+        # Tính toán hash của coinbase
+        coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
+        merkle_root = coinbase_hash_bin.hex()
+        
+        # Cập nhật Merkle root theo các nhánh trong merkle_branch
+        for branch in merkle_branch:
+            merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
+        
+        # Tạo block header
+        blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
+        
+        # Tính toán blockhash
+        blockhash = getPoWHash(bytes.fromhex(blockheader))
+        
+        # Kiểm tra xem blockhash có đáp ứng yêu cầu difficulty không
+        if int(blockhash.hex(), 16) < self.difficulty:
+            print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
+            # Gửi thông báo khi đào thành công
+            self.send_json({
+                "id": 4,
+                "method": "mining.submit",
+                "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
+            })
+        else:
+            print(f"[Thread {thread_id}] Hash: {blockhash.hex()} không đạt yêu cầu.")
+            
         """Bắt đầu đào coin"""
         self.connect()
         if self.running:
