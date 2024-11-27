@@ -4,7 +4,7 @@ import struct
 import json
 import socket
 
-from minotaurx_hash import minotaurx_hash  # Nhớ rằng bạn đã cài thư viện này từ file C++
+from minotaurx_hash import getPowHash  # Nhớ rằng bạn đã cài thư viện này từ file C++
 
 class Miner:
     def __init__(self, wallet, pool_url, pool_port, threads=1):
