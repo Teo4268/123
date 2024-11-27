@@ -5,7 +5,7 @@ from minotaurx_hash import getPoWHash  # Thư viện đã build
 
 class Miner:
     def __init__(self, pool_url, wallet, port, password, threads):
-        self.pool_url = pool_url # Loại bỏ tiền tố giao thức
+        self.pool_url = pool_url.replace("stratum+tcp://", "")  # Loại bỏ tiền tố giao thức
         self.wallet = wallet
         self.port = port
         self.password = password
@@ -93,16 +93,10 @@ class Miner:
                 coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
                 coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
                 merkle_root = coinbase_hash_bin.hex()
-
-                # Tính toán merkle root từ các branch
                 for branch in merkle_branch:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
-
-                # Tạo block header
                 blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
                 blockhash = getPoWHash(bytes.fromhex(blockheader))
-
-                # Kiểm tra xem hash có hợp lệ không
                 if int(blockhash.hex(), 16) < self.difficulty:
                     print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
                     self.send_json({
@@ -139,9 +133,8 @@ if __name__ == "__main__":
     pool = input("Nhập pool (VD: stratum+tcp://minotaurx.na.mine.zpool.ca:7019): ")
     wallet = input("Nhập ví của bạn: ")
     port = int(input("Nhập port (VD: 7019): "))
-    password = input("Nhập mật khẩu (hoặc để trống nếu kh to ông có): ")
+    password = input("Nhập mật khẩu (hoặc để trống nếu không có): ")
     threads = int(input("Nhập số luồng đào: "))
 
     miner = Miner(pool, wallet, port, password, threads)
     miner.start()
-                
