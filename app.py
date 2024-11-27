@@ -78,8 +78,8 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    # Lấy độ khó từ job (sử dụng giá trị hex và chuyển thành integer)
-                    self.difficulty = int(self.job[7], 16)
+                    # Lấy độ khó từ job (sử dụng giá trị hex và chuyển thành float)
+                    self.difficulty = int(self.job[7], 16) / (2**32)  # Chuyển đổi độ khó thành float
                     print(f"Nhận công việc mới: {self.job[0]} với độ khó {self.difficulty}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
@@ -113,7 +113,7 @@ class Miner:
                 print(f"Block Hash: {blockhash.hex()} - Hash Int: {block_hash_int} - Difficulty: {self.difficulty}")
 
                 # So sánh blockhash với độ khó
-                if block_hash_int < self.difficulty:
+                if block_hash_int < self.difficulty * (2**256):
                     print(f"[Thread {thread_id}] Đào được block hợp lệ! {blockhash.hex()}")
                     self.send_json({
                         "id": 4,
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     pool = "minotaurx.na.mine.zpool.ca"
     wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
     port = 7019
-    password = "c=RVN"  # Bạn có thể thay đổi mật khẩu nếu cần
+    password = "x"  # Bạn có thể thay đổi mật khẩu nếu cần
     threads = 1  # Sử dụng 1 luồng đào
 
     miner = Miner(pool, wallet, port, password, threads)
