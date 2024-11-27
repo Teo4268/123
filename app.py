@@ -1,7 +1,7 @@
 import socket
 import threading
-import time
 import struct
+import json
 from minotaurx_hash import getPoWHash  # Thư viện hashing của bạn
 
 def mine(pool, port, wallet, password, threads):
@@ -17,6 +17,7 @@ def mine(pool, port, wallet, password, threads):
 
     def send_to_pool(sock, message):
         try:
+            print(f"[DEBUG] Gửi tới pool: {message}")
             sock.sendall((message + "\n").encode())
         except Exception as e:
             print(f"Lỗi gửi dữ liệu tới pool: {e}")
@@ -24,6 +25,7 @@ def mine(pool, port, wallet, password, threads):
     def receive_from_pool(sock):
         try:
             response = sock.recv(1024).decode()
+            print(f"[DEBUG] Nhận từ pool: {response}")
             return response
         except Exception as e:
             print(f"Lỗi nhận dữ liệu từ pool: {e}")
@@ -38,11 +40,17 @@ def mine(pool, port, wallet, password, threads):
                 break
             
             try:
-                data = eval(response)  # Pool gửi JSON (hoặc chuỗi tương tự)
-                job_id = data["job_id"]
-                prev_hash = data["prev_hash"]
+                # Sử dụng json.loads để xử lý chuỗi JSON
+                data = json.loads(response)
+                job_id = data.get("job_id")
+                prev_hash = data.get("prev_hash")
+                difficulty = data.get("difficulty", 0xFFFF)
                 nonce = 0
-                difficulty = data["difficulty"]
+
+                if not job_id or not prev_hash:
+                    print(f"[Thread-{thread_id}] Job không hợp lệ: {data}")
+                    continue
+
                 print(f"[Thread-{thread_id}] Nhận job: {job_id}, difficulty: {difficulty}")
 
                 # Thực hiện hashing và tìm nonce hợp lệ
@@ -54,13 +62,22 @@ def mine(pool, port, wallet, password, threads):
                     # Kiểm tra kết quả
                     if int(hash_result, 16) < difficulty:
                         print(f"[Thread-{thread_id}] Work found! Nonce: {nonce}, Hash: {hash_result}")
-                        submit = f'{{"method": "submit", "params": {{"id": "{job_id}", "nonce": {nonce}, "hash": "{hash_result}"}}}}'
+                        submit = json.dumps({
+                            "method": "submit",
+                            "params": {
+                                "id": job_id,
+                                "nonce": nonce,
+                                "hash": hash_result
+                            }
+                        })
                         send_to_pool(sock, submit)
                         break
 
                     nonce += 1
                     if nonce > 2**32 - 1:  # Nếu nonce vượt giới hạn
                         break
+            except json.JSONDecodeError as e:
+                print(f"[Thread-{thread_id}] Lỗi xử lý JSON: {e}")
             except Exception as e:
                 print(f"[Thread-{thread_id}] Lỗi xử lý công việc: {e}")
 
@@ -69,10 +86,16 @@ def mine(pool, port, wallet, password, threads):
     if not sock:
         return
 
-    # Gửi thông tin đăng nhập tới pool
-    login_message = f'{{"method": "login", "params": {{"login": "{wallet}", "pass": "{password}"}}}}'
-    send_to_pool(sock, login_message)
-    print("Đã gửi thông tin đăng nhập tới pool.")
+    # Gửi yêu cầu subscribe và authorize
+    subscribe_message = '{"id":1,"method":"mining.subscribe","params":[]}'
+    authorize_message = json.dumps({
+        "id": 2,
+        "method": "mining.authorize",
+        "params": [wallet, password]
+    })
+
+    send_to_pool(sock, subscribe_message)
+    send_to_pool(sock, authorize_message)
 
     # Tạo các thread để đào
     thread_list = []
@@ -85,10 +108,11 @@ def mine(pool, port, wallet, password, threads):
         t.join()
 
 if __name__ == "__main__":
-    pool = input("Nhập địa chỉ pool (ví dụ: minotaurx.na.mine.zpool.ca): ")
-    port = int(input("Nhập port của pool (ví dụ: 7019): "))
-    wallet = input("Nhập địa chỉ ví của bạn: ")
-    password = input("Nhập mật khẩu (password, ví dụ: x): ")
+    # Cấu hình mặc định
+    pool = "minotaurx.na.mine.zpool.ca"
+    port = 7019
+    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
+    password = "c=RVN"
     threads = int(input("Nhập số lượng threads: "))
 
     print(f"Đang kết nối tới pool {pool}:{port} với ví {wallet}, mật khẩu {password} và {threads} threads...")
