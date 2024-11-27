@@ -40,12 +40,13 @@ def mine(pool, port, wallet, password, threads):
                 break
             
             try:
-                # Sử dụng json.loads để xử lý chuỗi JSON
+                # Xử lý JSON an toàn
                 data = json.loads(response)
+                
+                # Kiểm tra tính hợp lệ của công việc
                 job_id = data.get("job_id")
                 prev_hash = data.get("prev_hash")
                 difficulty = data.get("difficulty", 0xFFFF)
-                nonce = 0
 
                 if not job_id or not prev_hash:
                     print(f"[Thread-{thread_id}] Job không hợp lệ: {data}")
@@ -54,6 +55,7 @@ def mine(pool, port, wallet, password, threads):
                 print(f"[Thread-{thread_id}] Nhận job: {job_id}, difficulty: {difficulty}")
 
                 # Thực hiện hashing và tìm nonce hợp lệ
+                nonce = 0
                 while True:
                     nonce_bytes = struct.pack("<I", nonce)
                     header = prev_hash + nonce_bytes.hex()
@@ -77,7 +79,7 @@ def mine(pool, port, wallet, password, threads):
                     if nonce > 2**32 - 1:  # Nếu nonce vượt giới hạn
                         break
             except json.JSONDecodeError as e:
-                print(f"[Thread-{thread_id}] Lỗi xử lý JSON: {e}")
+                print(f"[Thread-{thread_id}] Lỗi xử lý JSON: {response}, lỗi: {e}")
             except Exception as e:
                 print(f"[Thread-{thread_id}] Lỗi xử lý công việc: {e}")
 
