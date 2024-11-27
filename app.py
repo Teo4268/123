@@ -24,64 +24,69 @@ def mine(pool, port, wallet, password, threads):
 
     def receive_from_pool(sock):
         try:
+            # Nhận dữ liệu từ pool
             response = sock.recv(1024).decode()
             print(f"[DEBUG] Nhận từ pool: {response}")
-            return response
+
+            # Phân tách từng JSON nếu có nhiều dòng
+            messages = response.strip().split("\n")
+            return messages
         except Exception as e:
             print(f"Lỗi nhận dữ liệu từ pool: {e}")
-            return ""
+            return []
 
     def worker(sock, thread_id):
         while True:
-            # Nhận công việc từ pool
-            response = receive_from_pool(sock)
-            if not response:
+            # Nhận danh sách các JSON từ pool
+            responses = receive_from_pool(sock)
+            if not responses:
                 print(f"[Thread-{thread_id}] Không nhận được dữ liệu từ pool.")
                 break
             
-            try:
-                # Xử lý JSON an toàn
-                data = json.loads(response)
-                
-                # Kiểm tra tính hợp lệ của công việc
-                job_id = data.get("job_id")
-                prev_hash = data.get("prev_hash")
-                difficulty = data.get("difficulty", 0xFFFF)
+            for response in responses:
+                try:
+                    # Xử lý từng JSON riêng lẻ
+                    data = json.loads(response)
+                    
+                    # Kiểm tra tính hợp lệ của công việc
+                    job_id = data.get("job_id")
+                    prev_hash = data.get("prev_hash")
+                    difficulty = data.get("difficulty", 0xFFFF)
 
-                if not job_id or not prev_hash:
-                    print(f"[Thread-{thread_id}] Job không hợp lệ: {data}")
-                    continue
+                    if not job_id or not prev_hash:
+                        print(f"[Thread-{thread_id}] Job không hợp lệ: {data}")
+                        continue
 
-                print(f"[Thread-{thread_id}] Nhận job: {job_id}, difficulty: {difficulty}")
+                    print(f"[Thread-{thread_id}] Nhận job: {job_id}, difficulty: {difficulty}")
 
-                # Thực hiện hashing và tìm nonce hợp lệ
-                nonce = 0
-                while True:
-                    nonce_bytes = struct.pack("<I", nonce)
-                    header = prev_hash + nonce_bytes.hex()
-                    hash_result = getPoWHash(bytes.fromhex(header)).hex()
+                    # Thực hiện hashing và tìm nonce hợp lệ
+                    nonce = 0
+                    while True:
+                        nonce_bytes = struct.pack("<I", nonce)
+                        header = prev_hash + nonce_bytes.hex()
+                        hash_result = getPoWHash(bytes.fromhex(header)).hex()
 
-                    # Kiểm tra kết quả
-                    if int(hash_result, 16) < difficulty:
-                        print(f"[Thread-{thread_id}] Work found! Nonce: {nonce}, Hash: {hash_result}")
-                        submit = json.dumps({
-                            "method": "submit",
-                            "params": {
-                                "id": job_id,
-                                "nonce": nonce,
-                                "hash": hash_result
-                            }
-                        })
-                        send_to_pool(sock, submit)
-                        break
+                        # Kiểm tra kết quả
+                        if int(hash_result, 16) < difficulty:
+                            print(f"[Thread-{thread_id}] Work found! Nonce: {nonce}, Hash: {hash_result}")
+                            submit = json.dumps({
+                                "method": "submit",
+                                "params": {
+                                    "id": job_id,
+                                    "nonce": nonce,
+                                    "hash": hash_result
+                                }
+                            })
+                            send_to_pool(sock, submit)
+                            break
 
-                    nonce += 1
-                    if nonce > 2**32 - 1:  # Nếu nonce vượt giới hạn
-                        break
-            except json.JSONDecodeError as e:
-                print(f"[Thread-{thread_id}] Lỗi xử lý JSON: {response}, lỗi: {e}")
-            except Exception as e:
-                print(f"[Thread-{thread_id}] Lỗi xử lý công việc: {e}")
+                        nonce += 1
+                        if nonce > 2**32 - 1:  # Nếu nonce vượt giới hạn
+                            break
+                except json.JSONDecodeError as e:
+                    print(f"[Thread-{thread_id}] Lỗi xử lý JSON: {response}, lỗi: {e}")
+                except Exception as e:
+                    print(f"[Thread-{thread_id}] Lỗi xử lý công việc: {e}")
 
     # Tạo kết nối tới pool
     sock = connect_to_pool()
