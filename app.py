@@ -78,8 +78,8 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = int(self.job[7], 16)  # Lấy độ khó từ job
-                    print(f"Nhận công việc mới: {self.job[0]}")
+                    self.difficulty = int(self.job[7], 16)  # Lấy độ khó từ job (dùng số hex)
+                    print(f"Nhận công việc mới: {self.job[0]} với độ khó {self.difficulty}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
