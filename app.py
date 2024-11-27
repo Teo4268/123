@@ -14,7 +14,7 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.difficulty = None  # Gán difficulty là None ban đầu
+        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
         self.running = True
 
     def connect(self):
@@ -78,8 +78,8 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = response["params"][6]  # Lấy difficulty từ job nhận được
-                    print(f"Nhận công việc mới: {self.job[0]}, Độ khó: {self.difficulty}")
+                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+                    print(f"Nhận công việc mới: {self.job[0]}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
