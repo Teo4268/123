@@ -1,6 +1,7 @@
 import socket
 import json
 import threading
+import time
 from minotaurx_hash import getPoWHash  # Thư viện đã build
 
 class Miner:
@@ -16,6 +17,8 @@ class Miner:
         self.extranonce2_size = None
         self.difficulty = None  # Để độ khó động
         self.running = True
+        self.hashes_per_second = 0  # Biến lưu trữ hashrate
+        self.total_hashes = 0  # Tổng số hashes đã tính
 
     def connect(self):
         """Kết nối tới pool"""
@@ -88,25 +91,28 @@ class Miner:
     def mine(self, thread_id):
         """Thực hiện tính toán hash"""
         nonce = 0  # Bắt đầu từ nonce = 0
-        while self.running and nonce <= 4294967295:
+        start_time = time.time()  # Lấy thời gian bắt đầu
+        hashes_this_cycle = 0  # Biến đếm số hash trong vòng này
+
+        while self.running:
             if self.job and self.difficulty:
                 job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
                 extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
                 coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
                 coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
                 merkle_root = coinbase_hash_bin.hex()
-                
+
                 # Tính toán merkle root
                 for branch in merkle_branch:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
 
                 # Xây dựng blockheader: Phiên bản + previous block hash + merkle root + nbits + ntime + nonce
                 blockheader = version + prevhash + merkle_root + nbits + ntime + f"{nonce:08x}"
-                
+
                 # Tính toán block hash
                 blockhash = getPoWHash(bytes.fromhex(blockheader))
 
-                # So sánh blockhash với độ khó động
+                # So sánh blockhash với độ khó
                 block_hash_int = int(blockhash.hex(), 16)
 
                 # In ra thông tin mỗi khi nonce không hợp lệ
@@ -122,7 +128,17 @@ class Miner:
                     })
                     break  # Nếu tìm thấy block hợp lệ, dừng lại
 
+                hashes_this_cycle += 1  # Đếm số hash trong vòng này
+
             nonce += 1  # Tăng nonce sau mỗi vòng lặp
+
+            # Tính toán hashrate mỗi 10 giây
+            if time.time() - start_time >= 10:
+                self.hashes_per_second = hashes_this_cycle / 10
+                self.total_hashes += hashes_this_cycle
+                print(f"Hashrate: {self.hashes_per_second:.2f} H/s | Tổng hash đã tính: {self.total_hashes}")
+                start_time = time.time()  # Reset thời gian bắt đầu
+                hashes_this_cycle = 0  # Reset đếm hash
 
     def start(self):
         """Bắt đầu đào coin"""
@@ -151,8 +167,8 @@ if __name__ == "__main__":
     pool = "minotaurx.na.mine.zpool.ca"
     wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
     port = 7019
-    password = "x"  # Bạn có thể thay đổi mật khẩu nếu cần
-    threads = 1  # Sử dụng 1 luồng đào
+    password = "c=RVN"  # Bạn có thể thay đổi mật khẩu nếu cần
+    threads = 2  # Sử dụng 1 luồng đào
 
     miner = Miner(pool, wallet, port, password, threads)
     miner.start()
