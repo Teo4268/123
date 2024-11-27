@@ -21,13 +21,15 @@ class Miner:
         self.total_hashes = 0  # Tổng số hashes đã tính
 
     def connect(self):
-        """Kết nối tới pool"""
-        try:
-            self.connection = socket.create_connection((self.pool_url, self.port))
-            print(f"Kết nối thành công tới {self.pool_url}:{self.port}")
-        except Exception as e:
-            print(f"Lỗi khi kết nối tới pool: {e}")
-            self.running = False
+        """Kết nối tới pool và xử lý lại nếu kết nối bị mất"""
+        while self.running:
+            try:
+                self.connection = socket.create_connection((self.pool_url, self.port))
+                print(f"Kết nối thành công tới {self.pool_url}:{self.port}")
+                break  # Nếu kết nối thành công, thoát khỏi vòng lặp
+            except (socket.error, ConnectionError) as e:
+                print(f"Lỗi khi kết nối tới pool: {e}. Thử lại trong 5 giây...")
+                time.sleep(5)  # Thử lại sau 5 giây nếu gặp lỗi
 
     def subscribe(self):
         """Gửi yêu cầu subscribe tới pool"""
@@ -65,8 +67,14 @@ class Miner:
             self.running = False
 
     def send_json(self, data):
-        """Gửi dữ liệu JSON tới pool"""
-        self.connection.sendall((json.dumps(data) + "\n").encode())
+        """Gửi dữ liệu JSON tới pool và xử lý nếu bị mất kết nối"""
+        try:
+            self.connection.sendall((json.dumps(data) + "\n").encode())
+        except (BrokenPipeError, socket.error) as e:
+            print(f"Lỗi khi gửi dữ liệu: {e}. Thử kết nối lại...")
+            self.connection.close()  # Đóng kết nối cũ
+            self.connect()  # Tự động kết nối lại
+            self.send_json(data)  # Gửi lại dữ liệu sau khi kết nối lại
 
     def receive_json(self):
         """Nhận dữ liệu JSON từ pool"""
@@ -81,7 +89,6 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    # Lấy độ khó từ job (sử dụng giá trị hex và chuyển thành float)
                     self.difficulty = int(self.job[7], 16) / (2**32)  # Chuyển đổi độ khó thành float
                     print(f"Nhận công việc mới: {self.job[0]} với độ khó {self.difficulty}")
             except Exception as e:
@@ -169,7 +176,7 @@ if __name__ == "__main__":
     wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
     port = 7019
     password = "c=RVN"  # Bạn có thể thay đổi mật khẩu nếu cần
-    threads = 2  # Sử dụng 1 luồng đào
+    threads = 1  # Sử dụng 1 luồng đào
 
     miner = Miner(pool, wallet, port, password, threads)
     miner.start()
