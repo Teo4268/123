@@ -78,7 +78,7 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+                    self.difficulty = 0.000002  # Gán giá trị mặc định cho difficulty
                     print(f"Nhận công việc mới: {self.job[0]}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
