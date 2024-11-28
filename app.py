@@ -1,107 +1,140 @@
 import socket
-import time
-import struct
+import json
 import threading
-import argparse
-from minotaurx_hash import minotaurx_hash  # Import your hashing library here
+from minotaurx_hash import getPoWHash  # Thư viện đã build
 
-# Function to connect to the pool and send data
-def connect_to_pool(pool_url, wallet, password):
-    host, port = pool_url.split(":")
-    port = int(port)
-    
-    # Connect to the stratum pool
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((host, port))
-    
-    # Stratum handshake (init)
-    request = {
-        "id": 1,
-        "method": "mining.subscribe",
-        "params": []
-    }
-    s.sendall(bytes(f"{str(request)}\n", "utf-8"))
-    
-    # Wait for subscription response
-    response = s.recv(1024)
-    print(f"Received subscription response: {response}")
-    
-    # Subscribe worker
-    request = {
-        "id": 2,
-        "method": "mining.authorize",
-        "params": [wallet, password]
-    }
-    s.sendall(bytes(f"{str(request)}\n", "utf-8"))
-    
-    return s
+class Miner:
+    def __init__(self, pool_url, wallet, port, password, threads):
+        self.pool_url = pool_url.replace("stratum+tcp://", "")  # Loại bỏ tiền tố giao thức
+        self.wallet = wallet
+        self.port = port
+        self.password = password
+        self.threads = threads
+        self.connection = None
+        self.job = None
+        self.extranonce1 = None
+        self.extranonce2_size = None
+        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+        self.running = True
 
-# Function to mine using multiple threads
-def mine_thread(pool_url, wallet, password, keepalive, threads):
-    # Establish connection with the pool
-    s = connect_to_pool(pool_url, wallet, password)
-    
-    # Work for each thread
-    def mine_worker(thread_id):
-        while True:
-            # Receive mining job from the pool (work)
-            data = s.recv(1024)
-            print(f"Thread {thread_id} received work: {data}")
-            
-            # Perform hashing task (mining)
-            job_data = struct.unpack("<80s", data)
-            result = minotaurx_hash(job_data)
-            
-            # Send the result back to the pool
-            response = {
-                "id": thread_id,
-                "method": "mining.submit",
-                "params": [wallet, "job_id", result]
-            }
-            s.sendall(bytes(f"{str(response)}\n", "utf-8"))
-            print(f"Thread {thread_id} sent result: {result}")
-            
-            if keepalive:
-                # Send keepalive message every 60 seconds
-                keepalive_message = {
-                    "id": thread_id,
-                    "method": "mining.keepalive",
-                    "params": []
-                }
-                s.sendall(bytes(f"{str(keepalive_message)}\n", "utf-8"))
-                print(f"Thread {thread_id} sent keepalive")
-                
-            time.sleep(2)  # Simulate mining work speed
-    
-    # Start threads
-    threads_list = []
-    for i in range(threads):
-        thread = threading.Thread(target=mine_worker, args=(i,))
-        threads_list.append(thread)
-        thread.start()
+    def connect(self):
+        """Kết nối tới pool"""
+        try:
+            self.connection = socket.create_connection((self.pool_url, self.port))
+            print(f"Kết nối thành công tới {self.pool_url}:{self.port}")
+        except Exception as e:
+            print(f"Lỗi khi kết nối tới pool: {e}")
+            self.running = False
 
-    for thread in threads_list:
-        thread.join()
+    def subscribe(self):
+        """Gửi yêu cầu subscribe tới pool"""
+        try:
+            self.send_json({
+                "id": 1,
+                "method": "mining.subscribe",
+                "params": []
+            })
+            response = self.receive_json()
+            if response and "result" in response:
+                self.extranonce1 = response["result"][1]
+                self.extranonce2_size = response["result"][2]
+                print("Đăng ký thành công.")
+        except Exception as e:
+            print(f"Lỗi khi đăng ký: {e}")
+            self.running = False
 
-# Main function to parse arguments and start mining
-def main():
-    parser = argparse.ArgumentParser(description="MinotaurX Coin Miner")
-    parser.add_argument("--algorithm", type=str, default="minotaurx", help="Mining algorithm")
-    parser.add_argument("--pool", type=str, required=True, help="Pool URL (e.g., minotaurx.sea.mine.zpool.ca:7019)")
-    parser.add_argument("--wallet", type=str, required=True, help="Your wallet address")
-    parser.add_argument("--password", type=str, default="c=RVN", help="Password (e.g., c=RVN)")
-    parser.add_argument("--keepalive", type=bool, default=True, help="Enable keepalive (true/false)")
-    parser.add_argument("--threads", type=int, default=1, help="Number of threads to use")
-    
-    args = parser.parse_args()
-    
-    print(f"Mining with algorithm: {args.algorithm}")
-    print(f"Pool: {args.pool}")
-    print(f"Wallet: {args.wallet}")
-    print(f"Password: {args.password}")
-    
-    # Start mining
-    mine_thread(args.pool, args.wallet, args.password, args.keepalive, args.threads)
+    def authorize(self):
+        """Gửi yêu cầu đăng nhập (authorize)"""
+        try:
+            self.send_json({
+                "id": 2,
+                "method": "mining.authorize",
+                "params": [self.wallet, self.password]
+            })
+            response = self.receive_json()
+            if response and response.get("result", False):
+                print("Đăng nhập thành công.")
+            else:
+                print("Lỗi khi đăng nhập.")
+                self.running = False
+        except Exception as e:
+            print(f"Lỗi khi đăng nhập: {e}")
+            self.running = False
+
+    def send_json(self, data):
+        """Gửi dữ liệu JSON tới pool"""
+        self.connection.sendall((json.dumps(data) + "\n").encode())
+
+    def receive_json(self):
+        """Nhận dữ liệu JSON từ pool"""
+        response = self.connection.recv(1024).decode()
+        for line in response.splitlines():
+            return json.loads(line)
+
+    def handle_jobs(self):
+        """Nhận công việc mới từ pool"""
+        while self.running:
+            try:
+                response = self.receive_json()
+                if response and response.get("method") == "mining.notify":
+                    self.job = response["params"]
+                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+                    print(f"Nhận công việc mới: {self.job[0]}")
+            except Exception as e:
+                print(f"Lỗi khi nhận công việc: {e}")
+                self.running = False
+
+    def mine(self, thread_id):
+        """Thực hiện tính toán hash"""
+        while self.running:
+            if self.job:
+                job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
+                extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
+                coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
+                coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
+                merkle_root = coinbase_hash_bin.hex()
+                for branch in merkle_branch:
+                    merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
+                blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
+                blockhash = getPoWHash(bytes.fromhex(blockheader))
+                if int(blockhash.hex(), 16) < self.difficulty:
+                    print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
+                    self.send_json({
+                        "id": 4,
+                        "method": "mining.submit",
+                        "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
+                    })
+                else:
+                    print(f"[Thread {thread_id}] Hash: {blockhash.hex()} không đạt yêu cầu.")
+
+    def start(self):
+        """Bắt đầu đào coin"""
+        self.connect()
+        if self.running:
+            self.subscribe()
+        if self.running:
+            self.authorize()
+
+        if self.running:
+            # Chạy luồng nhận công việc
+            threading.Thread(target=self.handle_jobs, daemon=True).start()
+            # Tạo các luồng đào
+            threads = []
+            for i in range(self.threads):
+                thread = threading.Thread(target=self.mine, args=(i,))
+                threads.append(thread)
+                thread.start()
+
+            for thread in threads:
+                thread.join()
+
 
 if __name__ == "__main__":
-    main()
+    pool = input("Nhập pool (VD: stratum+tcp://minotaurx.na.mine.zpool.ca:7019): ")
+    wallet = input("Nhập ví của bạn: ")
+    port = int(input("Nhập port (VD: 7019): "))
+    password = input("Nhập mật khẩu (hoặc để trống nếu không có): ")
+    threads = int(input("Nhập số luồng đào: "))
+
+    miner = Miner(pool, wallet, port, password, threads)
+    miner.start()
