@@ -14,7 +14,7 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+        self.difficulty = None # Gán giá trị mặc định cho difficulty
         self.running = True
 
     def connect(self):
