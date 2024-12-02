@@ -1,6 +1,7 @@
 import socket
 import json
 import threading
+import struct
 from minotaurx_hash import getPoWHash  # Thư viện đã build
 
 class Miner:
@@ -14,7 +15,7 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.difficulty = None # Gán giá trị mặc định cho difficulty
+        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
         self.running = True
 
     def connect(self):
@@ -78,14 +79,14 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = 0.000002  # Gán giá trị mặc định cho difficulty
+                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
                     print(f"Nhận công việc mới: {self.job[0]}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
 
     def mine(self, thread_id):
-        """Thực hiện tính toán hash"""
+        """Thực hiện tính toán hash và tìm nonce hợp lệ"""
         while self.running:
             if self.job:
                 job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
@@ -95,9 +96,13 @@ class Miner:
                 merkle_root = coinbase_hash_bin.hex()
                 for branch in merkle_branch:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
+
                 blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
-                blockhash = getPoWHash(bytes.fromhex(blockheader))
-                if int(blockhash.hex(), 16) < self.difficulty:
+                
+                # Gọi hàm để tìm nonce hợp lệ
+                valid_nonce, blockhash = self.find_valid_nonce(blockheader)
+                
+                if valid_nonce is not None:
                     print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
                     self.send_json({
                         "id": 4,
@@ -105,7 +110,32 @@ class Miner:
                         "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
                     })
                 else:
-                    print(f"[Thread {thread_id}] Hash: {blockhash.hex()} không đạt yêu cầu.")
+                    print(f"[Thread {thread_id}] Không tìm thấy nonce hợp lệ.")
+
+    def find_valid_nonce(self, blockheader):
+        """Tìm nonce hợp lệ cho khối"""
+        nonce = 0
+        max_nonce = 0xFFFFFFFF  # Giá trị tối đa của nonce (32-bit)
+        
+        target_difficulty = 1  # Độ khó mục tiêu, có thể thay đổi theo độ khó của pool
+        
+        while nonce <= max_nonce:
+            # Tạo header mới bằng cách thêm nonce vào header gốc
+            full_header = blockheader + struct.pack("<I", nonce)
+
+            # Tính hash PoW
+            hash_result = getPoWHash(full_header)
+
+            # Chuyển đổi hash về số nguyên lớn để so sánh với target
+            hash_int = int.from_bytes(hash_result, byteorder="big")
+
+            # Kiểm tra nếu hash thỏa mãn độ khó
+            if hash_int < target_difficulty:
+                return nonce, hash_result  # Trả về nonce hợp lệ và hash tương ứng
+
+            nonce += 1
+
+        return None, None  # Không tìm được nonce hợp lệ
 
     def start(self):
         """Bắt đầu đào coin"""
