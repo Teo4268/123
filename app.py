@@ -160,10 +160,10 @@ class Miner:
 
 
 if __name__ == "__main__":
-    pool = input("Nhập pool (VD: stratum+tcp://minotaurx.na.mine.zpool.ca:7019): ")
-    wallet = input("Nhập ví của bạn: ")
-    port = int(input("Nhập port (VD: 7019): "))
-    password = input("Nhập mật khẩu (hoặc để trống nếu không có): ")
+    pool = "stratum+tcp://minotaurx.na.mine.zpool.ca:7019"
+    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
+    password = "c=RVN"  # Mật khẩu cho pool
+    port = 7019
     threads = int(input("Nhập số luồng đào: "))
 
     miner = Miner(pool, wallet, port, password, threads)
