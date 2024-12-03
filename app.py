@@ -2,22 +2,19 @@ import socket
 import json
 import threading
 from minotaurx_hash import getPoWHash  # Thư viện đã build
-import hashlib
 
 class Miner:
-    def __init__(self, pool_url, wallet, port, password, threads, currency):
-        self.pool_url = pool_url.replace("stratum+tcp://", "")  # Loại bỏ tiền tố giao thức
+    def __init__(self, pool_url, wallet, port, password, threads):
+        self.pool_url = pool_url  # Không cần phải loại bỏ tiền tố giao thức
         self.wallet = wallet
         self.port = port
         self.password = password
         self.threads = threads
-        self.currency = currency  # Thêm biến cho tiền tệ (c=RVN)
         self.connection = None
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.difficulty = None  # Đặt difficulty thành None
-        self.target = None
+        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
         self.running = True
 
     def connect(self):
@@ -81,10 +78,7 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    if self.difficulty is None:  # Nếu difficulty là None, tính target từ nbits
-                        self.target = int(response["params"][6], 16)  # Giả sử 'nbits' là tham số thứ 7
-                    else:
-                        self.target = int("f" * 64, 16) // self.difficulty  # Tính target với difficulty
+                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
                     print(f"Nhận công việc mới: {self.job[0]}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
@@ -103,10 +97,7 @@ class Miner:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
                 blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
                 blockhash = getPoWHash(bytes.fromhex(blockheader))
-                
-                # Kiểm tra nếu hash nhỏ hơn target
-                blockhash_int = int(blockhash.hex(), 16)
-                if blockhash_int < self.target:
+                if int(blockhash.hex(), 16) < self.difficulty:
                     print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
                     self.send_json({
                         "id": 4,
@@ -139,12 +130,11 @@ class Miner:
 
 
 if __name__ == "__main__":
-    # Hardcode thông tin pool và ví
-    pool = "stratum+tcp://minotaurx.na.mine.zpool.ca:7019"
-    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
-    port = 7019  # Thông thường cổng sẽ là 7019 cho MinotaurX trên Zpool
-    password = "c=RVN"  # Chỉ định loại tiền tệ
-    threads = 2  # Đặt số luồng mặc định là 2
+    pool = "minotaurx.na.mine.zpool.ca"  # Thông tin về pool của bạn
+    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"  # Ví của bạn
+    port = 7019  # Port của pool
+    password = "c=RVN"  # Password mặc định, có thể để trống
+    threads = 2  # Số luồng mặc định là 2
 
-    miner = Miner(pool, wallet, port, password, threads, currency="RVN")
+    miner = Miner(pool, wallet, port, password, threads)
     miner.start()
