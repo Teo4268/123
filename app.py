@@ -1,170 +1,114 @@
 import socket
 import json
-import threading
 import struct
-from minotaurx_hash import getPoWHash  # Thư viện đã build
+import threading
+import time
+from minotaurx_hash import getPoWHash  # Thư viện bạn đã build
 
-class Miner:
-    def __init__(self, pool_url, wallet, port, password, threads):
-        self.pool_url = pool_url.replace("stratum+tcp://", "")  # Loại bỏ tiền tố giao thức
-        self.wallet = wallet
-        self.port = port
-        self.password = password
-        self.threads = threads
-        self.connection = None
-        self.job = None
-        self.extranonce1 = None
-        self.extranonce2_size = None
-        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
-        self.running = True
+# Cấu hình mining
+POOL = "stratum+tcp://minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
+PORT = 7019  # Port của pool
+WALLET = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
+PASSWORD = "c=RVN"  # Mật khẩu (mặc định là "x")
+THREADS = 4  # Số lượng threads
 
-    def connect(self):
-        """Kết nối tới pool"""
+# Hàm kết nối tới mining pool
+def connect_to_pool():
+    try:
+        s = socket.create_connection((POOL.split("//")[1], PORT))
+        return s
+    except Exception as e:
+        print(f"Không thể kết nối tới pool: {e}")
+        return None
+
+# Gửi dữ liệu tới pool
+def send_to_pool(socket, data):
+    try:
+        socket.sendall((json.dumps(data) + "\n").encode())
+    except Exception as e:
+        print(f"Lỗi khi gửi dữ liệu tới pool: {e}")
+
+# Nhận dữ liệu từ pool
+def receive_from_pool(socket):
+    try:
+        response = socket.recv(1024).decode()
+        return [json.loads(line) for line in response.splitlines() if line.strip()]
+    except Exception as e:
+        print(f"Lỗi khi nhận dữ liệu từ pool: {e}")
+        return []
+
+# Hàm giải nonce
+def mine(job_id, prev_hash, target, extranonce1, extranonce2_size):
+    extranonce2 = 0
+    while True:
+        extranonce2_bin = struct.pack("<I", extranonce2)
+        header = prev_hash + extranonce1 + extranonce2_bin.hex()
+        hash_result = getPoWHash(bytes.fromhex(header))
+        if int(hash_result.hex(), 16) < target:
+            return extranonce2, hash_result.hex()
+        extranonce2 += 1
+
+# Hàm thực thi mining
+def mining_thread(pool_socket, job, target, extranonce1, extranonce2_size):
+    while True:
         try:
-            self.connection = socket.create_connection((self.pool_url, self.port))
-            print(f"Kết nối thành công tới {self.pool_url}:{self.port}")
+            extranonce2, valid_hash = mine(
+                job["job_id"], job["prev_hash"], target, extranonce1, extranonce2_size
+            )
+            submit_data = {
+                "id": 4,
+                "method": "mining.submit",
+                "params": [WALLET, job["job_id"], extranonce2, valid_hash],
+            }
+            send_to_pool(pool_socket, submit_data)
+            print(f"Đã gửi kết quả: {valid_hash}")
         except Exception as e:
-            print(f"Lỗi khi kết nối tới pool: {e}")
-            self.running = False
+            print(f"Lỗi trong thread mining: {e}")
 
-    def subscribe(self):
-        """Gửi yêu cầu subscribe tới pool"""
-        try:
-            self.send_json({
-                "id": 1,
-                "method": "mining.subscribe",
-                "params": []
-            })
-            response = self.receive_json()
-            if response and "result" in response:
-                self.extranonce1 = response["result"][1]
-                self.extranonce2_size = response["result"][2]
-                print("Đăng ký thành công.")
-        except Exception as e:
-            print(f"Lỗi khi đăng ký: {e}")
-            self.running = False
+# Khởi chạy chương trình
+def start_mining():
+    pool_socket = connect_to_pool()
+    if not pool_socket:
+        return
 
-    def authorize(self):
-        """Gửi yêu cầu đăng nhập (authorize)"""
-        try:
-            self.send_json({
-                "id": 2,
-                "method": "mining.authorize",
-                "params": [self.wallet, self.password]
-            })
-            response = self.receive_json()
-            if response and response.get("result", False):
-                print("Đăng nhập thành công.")
-            else:
-                print("Lỗi khi đăng nhập.")
-                self.running = False
-        except Exception as e:
-            print(f"Lỗi khi đăng nhập: {e}")
-            self.running = False
+    # Đăng nhập vào pool
+    login_data = {
+        "id": 1,
+        "method": "mining.subscribe",
+        "params": [WALLET, PASSWORD],
+    }
+    send_to_pool(pool_socket, login_data)
 
-    def send_json(self, data):
-        """Gửi dữ liệu JSON tới pool"""
-        self.connection.sendall((json.dumps(data) + "\n").encode())
+    # Lắng nghe phản hồi
+    responses = receive_from_pool(pool_socket)
+    for response in responses:
+        if "error" in response and response["error"]:
+            print(f"Lỗi từ pool: {response['error']}")
+            return
 
-    def receive_json(self):
-        """Nhận dữ liệu JSON từ pool"""
-        response = self.connection.recv(1024).decode()
-        for line in response.splitlines():
-            return json.loads(line)
+        if response.get("result"):
+            extranonce1 = response["result"][1]
+            extranonce2_size = response["result"][2]
 
-    def handle_jobs(self):
-        """Nhận công việc mới từ pool"""
-        while self.running:
-            try:
-                response = self.receive_json()
-                if response and response.get("method") == "mining.notify":
-                    self.job = response["params"]
-                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
-                    print(f"Nhận công việc mới: {self.job[0]}")
-            except Exception as e:
-                print(f"Lỗi khi nhận công việc: {e}")
-                self.running = False
+    # Lấy thông tin job đầu tiên
+    while True:
+        responses = receive_from_pool(pool_socket)
+        for response in responses:
+            if response.get("method") == "mining.notify":
+                job = {
+                    "job_id": response["params"][0],
+                    "prev_hash": response["params"][1],
+                    "coinb1": response["params"][2],
+                    "coinb2": response["params"][3],
+                }
+                target = int(response["params"][6], 16)
 
-    def mine(self, thread_id):
-        """Thực hiện tính toán hash và tìm nonce hợp lệ"""
-        while self.running:
-            if self.job:
-                job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
-                extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
-                coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
-                coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
-                merkle_root = coinbase_hash_bin.hex()
-                for branch in merkle_branch:
-                    merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
-
-                blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
-                
-                # Gọi hàm để tìm nonce hợp lệ
-                valid_nonce, blockhash = self.find_valid_nonce(blockheader)
-                
-                if valid_nonce is not None:
-                    print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
-                    self.send_json({
-                        "id": 4,
-                        "method": "mining.submit",
-                        "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
-                    })
-                else:
-                    print(f"[Thread {thread_id}] Không tìm thấy nonce hợp lệ.")
-
-    def find_valid_nonce(self, blockheader):
-        """Tìm nonce hợp lệ cho khối"""
-        nonce = 0
-        max_nonce = 0xFFFFFFFF  # Giá trị tối đa của nonce (32-bit)
-        
-        target_difficulty = 1  # Độ khó mục tiêu, có thể thay đổi theo độ khó của pool
-        
-        while nonce <= max_nonce:
-            # Tạo header mới bằng cách thêm nonce vào header gốc
-            full_header = blockheader + struct.pack("<I", nonce)
-
-            # Tính hash PoW
-            hash_result = getPoWHash(full_header)
-
-            # Chuyển đổi hash về số nguyên lớn để so sánh với target
-            hash_int = int.from_bytes(hash_result, byteorder="big")
-
-            # Kiểm tra nếu hash thỏa mãn độ khó
-            if hash_int < target_difficulty:
-                return nonce, hash_result  # Trả về nonce hợp lệ và hash tương ứng
-
-            nonce += 1
-
-        return None, None  # Không tìm được nonce hợp lệ
-
-    def start(self):
-        """Bắt đầu đào coin"""
-        self.connect()
-        if self.running:
-            self.subscribe()
-        if self.running:
-            self.authorize()
-
-        if self.running:
-            # Chạy luồng nhận công việc
-            threading.Thread(target=self.handle_jobs, daemon=True).start()
-            # Tạo các luồng đào
-            threads = []
-            for i in range(self.threads):
-                thread = threading.Thread(target=self.mine, args=(i,))
-                threads.append(thread)
-                thread.start()
-
-            for thread in threads:
-                thread.join()
-
+                # Chạy các thread
+                for _ in range(THREADS):
+                    threading.Thread(
+                        target=mining_thread,
+                        args=(pool_socket, job, target, extranonce1, extranonce2_size),
+                    ).start()
 
 if __name__ == "__main__":
-    pool = "stratum+tcp://minotaurx.na.mine.zpool.ca:7019"
-    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
-    password = "c=RVN"  # Mật khẩu cho pool
-    port = 7019
-    threads = int(input("Nhập số luồng đào: "))
-
-    miner = Miner(pool, wallet, port, password, threads)
-    miner.start()
+    start_mining()
