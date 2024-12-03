@@ -5,12 +5,13 @@ from minotaurx_hash import getPoWHash  # Thư viện đã build
 import hashlib
 
 class Miner:
-    def __init__(self, pool_url, wallet, port, password, threads):
+    def __init__(self, pool_url, wallet, port, password, threads, currency):
         self.pool_url = pool_url.replace("stratum+tcp://", "")  # Loại bỏ tiền tố giao thức
         self.wallet = wallet
         self.port = port
         self.password = password
         self.threads = threads
+        self.currency = currency  # Thêm biến cho tiền tệ (c=RVN)
         self.connection = None
         self.job = None
         self.extranonce1 = None
@@ -138,11 +139,12 @@ class Miner:
 
 
 if __name__ == "__main__":
-    pool = input("Nhập pool (VD: stratum+tcp://minotaurx.na.mine.zpool.ca:7019): ")
-    wallet = input("Nhập ví của bạn: ")
-    port = int(input("Nhập port (VD: 7019): "))
-    password = input("Nhập mật khẩu (hoặc để trống nếu không có): ")
+    # Hardcode thông tin pool và ví
+    pool = "stratum+tcp://minotaurx.na.mine.zpool.ca:7019"
+    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
+    port = 7019  # Thông thường cổng sẽ là 7019 cho MinotaurX trên Zpool
+    password = "c=RVN"  # Chỉ định loại tiền tệ
     threads = int(input("Nhập số luồng đào: "))
 
-    miner = Miner(pool, wallet, port, password, threads)
+    miner = Miner(pool, wallet, port, password, threads, currency="RVN")
     miner.start()
