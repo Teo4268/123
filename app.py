@@ -78,11 +78,20 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = int(self.job[6], 16)  # Đọc difficulty từ job (nbits)
+                    self.difficulty = self.calculate_difficulty(self.job[6])  # Tính difficulty từ nbits
                     print(f"Nhận công việc mới: {self.job[0]}, difficulty: {self.difficulty}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
+
+    def calculate_difficulty(self, nbits):
+        """Tính toán difficulty từ nbits"""
+        # Convert nbits từ dạng hex thành số thực
+        nbits_int = int(nbits, 16)
+        exponent = (nbits_int >> 24) & 0xFF
+        coefficient = nbits_int & 0xFFFFFF
+        target = coefficient * (2 ** (8 * (exponent - 3)))
+        return target
 
     def mine(self, thread_id):
         """Thực hiện tính toán hash"""
