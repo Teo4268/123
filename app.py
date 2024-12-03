@@ -144,7 +144,7 @@ if __name__ == "__main__":
     wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
     port = 7019  # Thông thường cổng sẽ là 7019 cho MinotaurX trên Zpool
     password = "c=RVN"  # Chỉ định loại tiền tệ
-    threads = int(input("Nhập số luồng đào: "))
+    threads = 2  # Đặt số luồng mặc định là 2
 
     miner = Miner(pool, wallet, port, password, threads, currency="RVN")
     miner.start()
