@@ -14,7 +14,7 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.difficulty = 1  # Gán giá trị mặc định cho difficulty
+        self.difficulty = None  # Khởi tạo độ khó là None, sẽ nhận từ pool
         self.running = True
 
     def connect(self):
@@ -78,8 +78,8 @@ class Miner:
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.difficulty = 1  # Gán giá trị mặc định cho difficulty
-                    print(f"Nhận công việc mới: {self.job[0]}")
+                    self.difficulty = int(self.job[6], 16)  # Đọc difficulty từ job (nbits)
+                    print(f"Nhận công việc mới: {self.job[0]}, difficulty: {self.difficulty}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
@@ -96,16 +96,18 @@ class Miner:
                 for branch in merkle_branch:
                     merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
                 blockheader = version + prevhash + merkle_root + nbits + ntime + "00000000"
-                blockhash = getPoWHash(bytes.fromhex(blockheader))
-                if int(blockhash.hex(), 16) < self.difficulty:
-                    print(f"[Thread {thread_id}] Đào được block! {blockhash.hex()}")
+                blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
+
+                # So sánh blockhash với difficulty
+                if int(blockhash, 16) < self.difficulty:
+                    print(f"[Thread {thread_id}] Đào được block! {blockhash}")
                     self.send_json({
                         "id": 4,
                         "method": "mining.submit",
                         "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
                     })
                 else:
-                    print(f"[Thread {thread_id}] Hash: {blockhash.hex()} không đạt yêu cầu.")
+                    print(f"[Thread {thread_id}] Hash: {blockhash} không đạt yêu cầu.")
 
     def start(self):
         """Bắt đầu đào coin"""
