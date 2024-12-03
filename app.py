@@ -5,7 +5,7 @@ from minotaurx_hash import getPoWHash  # Thư viện đã build
 
 class Miner:
     def __init__(self, pool_url, wallet, port, password, threads):
-        self.pool_url = pool_url  # Không cần phải loại bỏ tiền tố giao thức
+        self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
         self.password = password
