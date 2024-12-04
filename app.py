@@ -59,7 +59,7 @@ class v:
 
 # Lớp w (cơ sở mở rộng)
 class w(v):
-    import v3.minotaurx_hash as x
+    import minotaurx_hash as x
     ProofOfWork = x.getPoWHash
     _max_nonce = 4294967295
 
