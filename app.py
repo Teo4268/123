@@ -3,8 +3,61 @@ import json
 import threading
 from minotaurx_hash import getPoWHash  # Thư viện đã build
 
-class Miner:
+# Lớp v (cơ sở)
+class v:
+    _max_nonce = None
+
+    def ProofOfWork(A):
+        raise Exception('Do not use the Subscription class directly, subclass it')
+
+    class StateException(Exception):
+        pass
+
+    def __init__(A):
+        A._id = None
+        A._difficulty = None
+        A._extranonce1 = None
+        A._extranonce2_size = None
+        A._target = None
+        A._worker_name = None
+
+    id = property(lambda s: s._id)
+    worker_name = property(lambda s: s._worker_name)
+    difficulty = property(lambda s: s._difficulty)
+    target = property(lambda s: s._target)
+    extranonce1 = property(lambda s: s._extranonce1)
+    extranonce2_size = property(lambda s: s._extranonce2_size)
+
+    def set_worker_name(A, worker_name):
+        if A._worker_name:
+            raise A.StateException(f'Already authenticated as {A._worker_name} (requesting {worker_name})')
+        A._worker_name = worker_name
+
+    def _set_target(A, target):
+        A._target = '%064x' % target
+
+    def set_difficulty(A, difficulty):
+        if difficulty < 0:
+            raise A.StateException('Difficulty must be non-negative')
+        if difficulty == 0:
+            C = 2 ** 256 - 1
+        else:
+            C = min(int((4294901760 * 2 ** (256 - 64) + 1) / difficulty - 1 + .5), 2 ** 256 - 1)
+        A._difficulty = difficulty
+        A._set_target(C)
+
+# Lớp w (cơ sở mở rộng)
+class w(v):
+    ProofOfWork = getPoWHash
+    _max_nonce = 4294967295
+
+    def _set_target(A, target):
+        A._target = '%064x' % target
+
+# Lớp Miner
+class Miner(w):
     def __init__(self, pool_url, wallet, port, password, threads):
+        super().__init__()
         self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
