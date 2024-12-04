@@ -76,21 +76,24 @@ class Miner:
             return None
 
     def handle_jobs(self):
-        """Nhận công việc mới từ pool."""
-        while self.running:
-            try:
-                response = self.receive_json()
-                if response and response.get("method") == "mining.notify":
-                    self.job = response["params"]
-                    if self.job and len(self.job) > 6:
-                        self.target = self.calculate_target(self.job[6])  # Tính toán target từ nbits
-                    else:
-                        print("Công việc không hợp lệ.")
-                        self.running = False
+    """Nhận công việc mới từ pool."""
+    while self.running:
+        try:
+            response = self.receive_json()
+            print("Phản hồi nhận được:", response)  # In ra để kiểm tra dữ liệu trả về
+            if response and response.get("method") == "mining.notify":
+                self.job = response["params"]
+                if self.job and len(self.job) > 6:
+                    self.target = self.calculate_target(self.job[6])  # Tính toán target từ nbits
                     print(f"Nhận công việc mới: {self.job[0]}, target: {hex(self.target)}")
-            except Exception as e:
-                print(f"Lỗi khi nhận công việc: {e}")
-                self.running = False
+                else:
+                    print("Công việc không hợp lệ.")
+                    self.running = False
+            else:
+                print(f"Phản hồi không hợp lệ hoặc không phải 'mining.notify': {response}")
+        except Exception as e:
+            print(f"Lỗi khi nhận công việc: {e}")
+            self.running = False
 
     def calculate_target(self, nbits):
         """Tính toán target từ nbits."""
