@@ -109,6 +109,9 @@ class Miner(v):
                 self.set_extranonce1(response["result"][1])
                 self.set_extranonce2_size(response["result"][2])
                 print("Đăng ký thành công.")
+            else:
+                print("Không nhận được phản hồi hợp lệ từ pool.")
+                self.running = False
         except Exception as e:
             print(f"Lỗi khi đăng ký: {e}")
             self.running = False
@@ -152,8 +155,9 @@ class Miner(v):
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    self.target = self.calculate_target(self.job[6])
-                    print(f"Nhận công việc mới: {self.job[0]}, target: {hex(self.target)}")
+                    if self.get_target() is None:
+                        print("Target chưa được khởi tạo.")
+                    print(f"Nhận công việc mới: {self.job[0]}, target: {hex(self.get_target())}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
@@ -164,6 +168,11 @@ class Miner(v):
             if self.job:
                 try:
                     job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
+                    
+                    # Kiểm tra xem extrances1 và extrances2_size đã được khởi tạo chưa
+                    if self.get_extranonce1() is None or self.get_extranonce2_size() is None:
+                        print(f"[Thread {thread_id}] Không thể khai thác: extrances1 hoặc extrances2_size chưa được khởi tạo.")
+                        continue
                     
                     # Tạo extranonce2
                     extranonce2 = f"{thread_id:0{self.get_extranonce2_size() * 2}x}"
@@ -189,7 +198,7 @@ class Miner(v):
                     blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
 
                     # Kiểm tra blockhash so với target
-                    if int(blockhash, 16) < self.get_target():
+                    if self.get_target() is not None and int(blockhash, 16) < self.get_target():
                         print(f"[Thread {thread_id}] Đào được block: {blockhash}")
                         self.send_json({
                             "id": 4,
@@ -212,8 +221,7 @@ class Miner(v):
         if self.running:
             # Chạy luồng nhận công việc
             threading.Thread(target=self.handle_jobs, daemon=True).start()
-
-            # Tạo các luồng khai thác
+# Tạo các luồng khai thác
             threads = []
             for i in range(self.threads):
                 thread = threading.Thread(target=self.mine, args=(i,))
@@ -222,7 +230,6 @@ class Miner(v):
 
             for thread in threads:
                 thread.join()
-
 
 if __name__ == "__main__":
     pool = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
@@ -233,3 +240,4 @@ if __name__ == "__main__":
 
     miner = Miner(pool, wallet, port, password, threads)
     miner.start()
+                
