@@ -12,6 +12,7 @@ m = '%064x'
 O = Exception
 B = None
 A = property
+q = os.path.abspath('./libs')
 
 # Lớp v (cơ sở)
 class v:
@@ -77,8 +78,8 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
+        self.target = None
         self.running = True
-        self._target = None  # Thêm target ở đây
 
     def connect(self):
         """Kết nối tới pool."""
@@ -136,7 +137,9 @@ class Miner:
         try:
             response = self.connection.recv(4096).decode()
             for line in response.splitlines():
-                return json.loads(line)
+                data = json.loads(line)
+                print(f"Phản hồi nhận được: {data}")
+                return data
         except Exception as e:
             print(f"Lỗi khi nhận dữ liệu: {e}")
             return None
@@ -146,11 +149,16 @@ class Miner:
         while self.running:
             try:
                 response = self.receive_json()
-                print("Phản hồi nhận được:", response)
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
                     if self.job:
                         print(f"Nhận công việc mới: {self.job[0]}")
+                        # In tất cả các tham số của công việc
+                        print(f"job_id: {self.job[0]}, prevhash: {self.job[1]}")
+                        print(f"coinb1: {self.job[2]}, coinb2: {self.job[3]}")
+                        print(f"merkle_branch: {self.job[4]}, version: {self.job[5]}")
+                        print(f"nbits: {self.job[6]}, ntime: {self.job[7]}")
+                        print(f"clean_jobs: {self.job[8]}")
                     else:
                         print("Công việc không hợp lệ.")
                         self.running = False
@@ -165,8 +173,7 @@ class Miner:
         while self.running:
             if self.job:
                 try:
-                    # Kiểm tra xem target đã được tính chưa
-                    if self._target is None:
+                    if self.target is None:
                         print(f"[Thread {thread_id}] Target chưa được khởi tạo, dừng khai thác.")
                         self.running = False
                         return
@@ -197,7 +204,7 @@ class Miner:
                     blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
 
                     # Kiểm tra blockhash so với target
-                    if self._target is not None and int(blockhash, 16) < self._target:
+                    if self.target is not None and int(blockhash, 16) < self.target:
                         print(f"[Thread {thread_id}] Đào được block: {blockhash}")
                         self.send_json({
                             "id": 4,
@@ -240,6 +247,5 @@ if __name__ == "__main__":
     port = 7019  # Port của pool
     password = "c=RVN"  # Password
     threads = 2  # Số luồng
-
     miner = Miner(pool, wallet, port, password, threads)
     miner.start()
