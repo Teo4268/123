@@ -3,81 +3,8 @@ import json
 import threading
 from minotaurx_hash import getPoWHash  # Thư viện đã build
 
-# Lớp v (cơ sở)
-class v:
-    _max_nonce = None
-
-    def ProofOfWork(A):
-        raise Exception('Do not use the Subscription class directly, subclass it')
-
-    class StateException(Exception):
-        pass
-
-    def __init__(A):
-        A._id = None
-        A._difficulty = None
-        A._extranonce1 = None
-        A._extranonce2_size = None
-        A._target = None
-        A._worker_name = None
-
-    # Các phương thức truy cập và thay đổi giá trị thuộc tính
-    def get_id(A):
-        return A._id
-
-    def set_id(A, value):
-        A._id = value
-
-    def get_worker_name(A):
-        return A._worker_name
-
-    def set_worker_name(A, value):
-        if A._worker_name:
-            raise A.StateException(f'Already authenticated as {A._worker_name} (requesting {value})')
-        A._worker_name = value
-
-    def get_difficulty(A):
-        return A._difficulty
-
-    def set_difficulty(A, value):
-        if value < 0:
-            raise A.StateException('Difficulty must be non-negative')
-        if value == 0:
-            A._difficulty = 2 ** 256 - 1
-        else:
-            A._difficulty = min(int((4294901760 * 2 ** (256 - 64) + 1) / value - 1 + .5), 2 ** 256 - 1)
-        A._set_target()
-
-    def _set_target(A):
-        A._target = '%064x' % A._difficulty
-
-    def get_target(A):
-        return A._target
-
-    def get_extranonce1(A):
-        return A._extranonce1
-
-    def set_extranonce1(A, value):
-        A._extranonce1 = value
-
-    def get_extranonce2_size(A):
-        return A._extranonce2_size
-
-    def set_extranonce2_size(A, value):
-        A._extranonce2_size = value
-
-    def calculate_target(A, nbits):
-        """Tính toán target từ nbits."""
-        nbits_int = int(nbits, 16)
-        exponent = (nbits_int >> 24) & 0xFF
-        coefficient = nbits_int & 0xFFFFFF
-        return coefficient * (2 ** (8 * (exponent - 3)))
-
-
-# Lớp Miner
-class Miner(v):
+class Miner:
     def __init__(self, pool_url, wallet, port, password, threads):
-        super().__init__()  # Khởi tạo lớp cơ sở v
         self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
@@ -85,6 +12,9 @@ class Miner(v):
         self.threads = threads
         self.connection = None
         self.job = None
+        self.extranonce1 = None
+        self.extranonce2_size = None
+        self.target = None
         self.running = True
 
     def connect(self):
@@ -106,12 +36,9 @@ class Miner(v):
             })
             response = self.receive_json()
             if response and "result" in response:
-                self.set_extranonce1(response["result"][1])
-                self.set_extranonce2_size(response["result"][2])
+                self.extranonce1 = response["result"][1]
+                self.extranonce2_size = response["result"][2]
                 print("Đăng ký thành công.")
-            else:
-                print("Không nhận được phản hồi hợp lệ từ pool.")
-                self.running = False
         except Exception as e:
             print(f"Lỗi khi đăng ký: {e}")
             self.running = False
@@ -155,12 +82,26 @@ class Miner(v):
                 response = self.receive_json()
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    if self.get_target() is None:
-                        print("Target chưa được khởi tạo.")
-                    print(f"Nhận công việc mới: {self.job[0]}, target: {hex(self.get_target())}")
+                    if self.job and len(self.job) > 6:
+                        self.target = self.calculate_target(self.job[6])  # Tính toán target từ nbits
+                    else:
+                        print("Công việc không hợp lệ.")
+                        self.running = False
+                    print(f"Nhận công việc mới: {self.job[0]}, target: {hex(self.target)}")
             except Exception as e:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
+
+    def calculate_target(self, nbits):
+        """Tính toán target từ nbits."""
+        try:
+            nbits_int = int(nbits, 16)
+            exponent = (nbits_int >> 24) & 0xFF
+            coefficient = nbits_int & 0xFFFFFF
+            return coefficient * (2 ** (8 * (exponent - 3)))
+        except Exception as e:
+            print(f"Lỗi khi tính toán target: {e}")
+            return None
 
     def mine(self, thread_id):
         """Thực hiện khai thác."""
@@ -169,16 +110,17 @@ class Miner(v):
                 try:
                     job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
                     
-                    # Kiểm tra xem extrances1 và extrances2_size đã được khởi tạo chưa
-                    if self.get_extranonce1() is None or self.get_extranonce2_size() is None:
-                        print(f"[Thread {thread_id}] Không thể khai thác: extrances1 hoặc extrances2_size chưa được khởi tạo.")
-                        continue
+                    # Kiểm tra xem target đã được tính chưa
+                    if self.target is None:
+                        print(f"[Thread {thread_id}] Target chưa được khởi tạo, dừng khai thác.")
+                        self.running = False
+                        return
                     
                     # Tạo extranonce2
-                    extranonce2 = f"{thread_id:0{self.get_extranonce2_size() * 2}x}"
+                    extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
                     
                     # Tạo coinbase
-                    coinbase = coinb1 + self.get_extranonce1() + extranonce2 + coinb2
+                    coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
                     coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
                     merkle_root = coinbase_hash_bin.hex()
                     
@@ -198,7 +140,7 @@ class Miner(v):
                     blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
 
                     # Kiểm tra blockhash so với target
-                    if self.get_target() is not None and int(blockhash, 16) < self.get_target():
+                    if self.target is not None and int(blockhash, 16) < self.target:
                         print(f"[Thread {thread_id}] Đào được block: {blockhash}")
                         self.send_json({
                             "id": 4,
@@ -221,7 +163,8 @@ class Miner(v):
         if self.running:
             # Chạy luồng nhận công việc
             threading.Thread(target=self.handle_jobs, daemon=True).start()
-# Tạo các luồng khai thác
+
+            # Tạo các luồng khai thác
             threads = []
             for i in range(self.threads):
                 thread = threading.Thread(target=self.mine, args=(i,))
@@ -240,4 +183,3 @@ if __name__ == "__main__":
 
     miner = Miner(pool, wallet, port, password, threads)
     miner.start()
-                
