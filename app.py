@@ -1,7 +1,6 @@
 import socket
 import json
 import threading
-from minotaurx_hash import getPoWHash  # Thư viện đã build
 
 class Miner:
     def __init__(self, pool_url, wallet, port, password, threads):
@@ -14,7 +13,6 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.target = None
         self.running = True
 
     def connect(self):
@@ -86,9 +84,8 @@ class Miner:
                 print("Phản hồi nhận được:", response)  # In ra để kiểm tra dữ liệu trả về
                 if response and response.get("method") == "mining.notify":
                     self.job = response["params"]
-                    if self.job and len(self.job) > 6:
-                        self.target = self.calculate_target(self.job[6])  # Tính toán target từ nbits
-                        print(f"Nhận công việc mới: {self.job[0]}, target: {hex(self.target)}")
+                    if self.job:
+                        print(f"Nhận công việc mới: {self.job[0]}")
                     else:
                         print("Công việc không hợp lệ.")
                         self.running = False
@@ -98,65 +95,16 @@ class Miner:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
 
-    def calculate_target(self, nbits):
-        """Tính toán target từ nbits."""
-        try:
-            nbits_int = int(nbits, 16)
-            exponent = (nbits_int >> 24) & 0xFF
-            coefficient = nbits_int & 0xFFFFFF
-            return coefficient * (2 ** (8 * (exponent - 3)))
-        except Exception as e:
-            print(f"Lỗi khi tính toán target: {e}")
-            return None
-
     def mine(self, thread_id):
-        """Thực hiện khai thác."""
+        """Giả lập khai thác mà không tính toán."""
         while self.running:
             if self.job:
-                try:
-                    job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
-                    
-                    # Kiểm tra xem target đã được tính chưa
-                    if self.target is None:
-                        print(f"[Thread {thread_id}] Target chưa được khởi tạo, dừng khai thác.")
-                        self.running = False
-                        return
-                    
-                    # Tạo extranonce2
-                    extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
-                    
-                    # Tạo coinbase
-                    coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
-                    coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
-                    merkle_root = coinbase_hash_bin.hex()
-                    
-                    # Kết hợp merkle branch
-                    for branch in merkle_branch:
-                        merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
-                    
-                    # Tạo block header
-                    blockheader = (
-                        version
-                        + prevhash
-                        + merkle_root
-                        + nbits
-                        + ntime
-                        + "00000000"
-                    )
-                    blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
-
-                    # Kiểm tra blockhash so với target
-                    if self.target is not None and int(blockhash, 16) < self.target:
-                        print(f"[Thread {thread_id}] Đào được block: {blockhash}")
-                        self.send_json({
-                            "id": 4,
-                            "method": "mining.submit",
-                            "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
-                        })
-                    else:
-                        print(f"[Thread {thread_id}] Hash không đạt: {blockhash}")
-                except Exception as e:
-                    print(f"[Thread {thread_id}] Lỗi khi đào: {e}")
+                print(f"[Thread {thread_id}] Đang khai thác công việc {self.job[0]}")
+            else:
+                print(f"[Thread {thread_id}] Chưa có công việc.")
+            # Giả lập dừng lại sau một thời gian
+            import time
+            time.sleep(2)
 
     def start(self):
         """Bắt đầu đào coin."""
@@ -170,7 +118,7 @@ class Miner:
             # Chạy luồng nhận công việc
             threading.Thread(target=self.handle_jobs, daemon=True).start()
 
-            # Tạo các luồng khai thác
+            # Tạo các luồng khai thác giả lập
             threads = []
             for i in range(self.threads):
                 thread = threading.Thread(target=self.mine, args=(i,))
