@@ -4,15 +4,15 @@ import threading
 import os
 import sys
 
+# Thêm đường dẫn thư viện (nếu cần)
 q = os.path.abspath('./libs')
-sys.path.append(q)  # Sử dụng sys.path để thêm đường dẫn vào Python path
+sys.path.append(q)
 
-# Các hằng số và khai báo
+# Định nghĩa các hằng số
 m = '%064x'
 O = Exception
 B = None
 A = property
-q = os.path.abspath('./libs')
 
 # Lớp v (cơ sở)
 class v:
@@ -21,13 +21,13 @@ class v:
     class StateException(O):
         pass
 
-    def __init__(A):
-        A._id = B
-        A._difficulty = B
-        A._extranonce1 = B
-        A._extranonce2_size = B
-        A._target = B
-        A._worker_name = B
+    def __init__(self):
+        self._id = B
+        self._difficulty = B
+        self._extranonce1 = B
+        self._extranonce2_size = B
+        self._target = B
+        self._worker_name = B
 
     id = A(lambda s: s._id)
     worker_name = A(lambda s: s._worker_name)
@@ -36,37 +36,25 @@ class v:
     extranonce1 = A(lambda s: s._extranonce1)
     extranonce2_size = A(lambda s: s._extranonce2_size)
 
-    def set_worker_name(A, worker_name):
-        if A._worker_name:
-            raise A.StateException(f'Already authenticated as {A._worker_name} (requesting {worker_name})')
-        A._worker_name = worker_name
+    def set_worker_name(self, worker_name):
+        if self._worker_name:
+            raise self.StateException(f'Already authenticated as {self._worker_name} (requesting {worker_name})')
+        self._worker_name = worker_name
 
-    def _set_target(A, target):
-        A._target = m % target
+    def _set_target(self, target):
+        self._target = m % target
 
-    def set_difficulty(B, difficulty):
-        A = difficulty
-        if A < 0:
-            raise B.StateException('Difficulty must be non-negative')
-        if A == 0:
-            C = 2 ** 256 - 1
+    def set_difficulty(self, difficulty):
+        if difficulty < 0:
+            raise self.StateException('Difficulty must be non-negative')
+        if difficulty == 0:
+            self._target = 2 ** 256 - 1
         else:
-            C = min(D((4294901760 * 2 ** (256 - 64) + 1) / A - 1 + .5), 2 ** 256 - 1)
-        B._difficulty = A
-        B._set_target(C)
+            self._target = int((4294901760 * 2 ** (256 - 64) + 1) / difficulty - 1 + 0.5)
+        self._difficulty = difficulty
+        self._set_target(self._target)
 
-
-# Lớp w (cơ sở mở rộng)
-class w(v):
-    import minotaurx_hash as x
-    ProofOfWork = x.getPoWHash
-    _max_nonce = 4294967295
-
-    def _set_target(A, target):
-        A._target = m % target
-
-
-# Miner class
+# Lớp Miner
 class Miner:
     def __init__(self, pool_url, wallet, port, password, threads):
         self.pool_url = pool_url
@@ -78,7 +66,7 @@ class Miner:
         self.job = None
         self.extranonce1 = None
         self.extranonce2_size = None
-        self.target = None
+        self.target = None  # Khởi tạo target là None
         self.running = True
 
     def connect(self):
@@ -147,25 +135,15 @@ class Miner:
         while self.running:
             try:
                 response = self.receive_json()
-                print("Phản hồi nhận được:", response)
                 if response and response.get("method") == "mining.notify":
-                    job_params = response["params"]
-                    if len(job_params) > 8:
-                        job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = job_params
-                        self.job = {
-                            "job_id": job_id,
-                            "prevhash": prevhash,
-                            "coinb1": coinb1,
-                            "coinb2": coinb2,
-                            "merkle_branch": merkle_branch,
-                            "version": version,
-                            "nbits": nbits,
-                            "ntime": ntime,
-                            "clean_jobs": clean_jobs
-                        }
-                        print(f"Nhận công việc mới: {job_id}")
+                    self.job = response["params"]
+                    if self.job:
+                        print(f"Nhận công việc mới: {self.job[0]}")
+                        # Cập nhật lại độ khó và target từ công việc
+                        difficulty = self.job[1]  # Cập nhật đúng vị trí chứa độ khó
+                        self.set_difficulty(difficulty)
                     else:
-                        print("Công việc không hợp lệ. Dữ liệu không đầy đủ.")
+                        print("Công việc không hợp lệ.")
                         self.running = False
                 else:
                     print(f"Phản hồi không hợp lệ hoặc không phải 'mining.notify': {response}")
@@ -184,16 +162,8 @@ class Miner:
                         self.running = False
                         return
 
-                    # Tạo các tham số công việc
-                    job_id = self.job['job_id']
-                    prevhash = self.job['prevhash']
-                    coinb1 = self.job['coinb1']
-                    coinb2 = self.job['coinb2']
-                    merkle_branch = self.job['merkle_branch']
-                    version = self.job['version']
-                    nbits = self.job['nbits']
-                    ntime = self.job['ntime']
-
+                    job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
+                    
                     # Tạo extranonce2
                     extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
                     
@@ -231,7 +201,7 @@ class Miner:
                     print(f"[Thread {thread_id}] Lỗi khi đào: {e}")
             else:
                 print(f"[Thread {thread_id}] Công việc không hợp lệ hoặc chưa được nhận.")
-    
+
     def start(self):
         """Bắt đầu đào coin."""
         self.connect()
@@ -254,13 +224,13 @@ class Miner:
             for thread in threads:
                 thread.join()
 
-
+# Chạy chương trình
 if __name__ == "__main__":
-        pool = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
-        wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"  # Ví của bạn
-        port = 7019  # Port của pool
-        password = "c=RVN"  # Password
-        threads = 2  # Số luồng
+    pool = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
+    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"  # Ví của bạn
+    port = 7019  # Port của pool
+    password = "c=RVN"  # Password
+    threads = 2  # Số luồng
 
-        miner = Miner(pool, wallet, port, password, threads)
-        miner.start()
+    miner = Miner(pool, wallet, port, password, threads)
+    miner.start()
