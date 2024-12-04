@@ -2,6 +2,11 @@ import socket
 import json
 import threading
 import os
+import sys
+import os
+
+q = os.path.abspath('./libs')
+sys.path.append(q)  # Sử dụng sys.path để thêm đường dẫn vào Python path
 
 # Các hằng số và khai báo
 m = '%064x'
@@ -9,7 +14,6 @@ O = Exception
 B = None
 A = property
 q = os.path.abspath('./libs')
-os.path.append(q)
 
 # Lớp v (cơ sở)
 class v:
