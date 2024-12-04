@@ -275,78 +275,7 @@ class Miner:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
 
-    def set_difficulty(self, difficulty):
-        """Cập nhật độ khó (difficulty) và target."""
-        try:
-            if difficulty < 0:
-                raise Exception("Difficulty phải là số không âm.")
-            self.target = (2**256) // difficulty
-            print(f"Độ khó đã được cập nhật: {difficulty}, target: {self.target}")
-        except Exception as e:
-            print(f"Lỗi khi cập nhật độ khó: {e}")
-
-    def mine(self, thread_id):
-        """Quá trình khai thác từ pool."""
-        try:
-            while self.running:
-                if self.job:
-                    # Tạo nonce và gửi lại công việc khai thác
-                    nonce = random.randint(0, 2**32)
-                    print(f"Thread {thread_id} đang khai thác với nonce: {nonce}")
-                    # Thực hiện hash và gửi lại nếu tìm thấy đúng giá trị
-                    # Giả sử bạn có phương thức chứng minh công việc (PoW) và kiểm tra kết quả
-                    if self.proof_of_work(self.job, nonce):
-                        self.submit_work(nonce)
-                    time.sleep(1)
-                else:
-                    print("Không có công việc để khai thác.")
-                    time.sleep(5)
-        except Exception as e:
-            print(f"Lỗi khi khai thác: {e}")
-
-    def proof_of_work(self, job, nonce):
-        """Kiểm tra chứng minh công việc (PoW)."""
-        # Cần triển khai chứng minh công việc với thuật toán hash (minotaurx hoặc tương tự)
-        print(f"Kiểm tra PoW với nonce {nonce}...")
-        return random.choice([True, False])  # Giả lập quá trình kiểm tra
-
-    def submit_work(self, nonce):
-        """Gửi công việc đã hoàn thành tới pool."""
-        try:
-            self.send_json({
-                "id": 3,
-                "method": "mining.submit",
-                "params": [self.wallet, self.extranonce1, self.job[0], self.job[1], nonce]
-            })
-            response = self.receive_json()
-            if response and response.get("result", False):
-                print(f"Công việc đã được gửi thành công với nonce {nonce}.")
-            else:
-                print("Lỗi khi gửi công việc.")
-        except Exception as e:
-            print(f"Lỗi khi gửi công việc: {e}")
-
-    def start(self):
-        """Bắt đầu quá trình khai thác."""
-        self.connect()
-        if self.running:
-            self.subscribe()
-            if self.running:
-                self.authorize()
-                if self.running:
-                    self.handle_jobs()
-
-                    # Tạo và khởi chạy các thread để khai thác
-                    threads = []
-                    for i in range(self.threads):
-                        thread = threading.Thread(target=self.mine, args=(i,))
-                        threads.append(thread)
-                        thread.start()
-
-                    # Chờ các thread hoàn thành
-                    for thread in threads:
-                        thread.join()
-
+    
 # Chạy chương trình
 if __name__ == "__main__":
     pool_url = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
