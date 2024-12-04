@@ -176,7 +176,7 @@ class w(v):
 # Miner class
 class Miner(threading.Thread):
     def __init__(self, pool_url, wallet, port, password, threads):
-        threading.Thread.__init__(self)
+        super().__init__()
         self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
@@ -187,6 +187,7 @@ class Miner(threading.Thread):
         self.extranonce1 = None
         self.extranonce2_size = None
         self.target = None  # Khởi tạo target là None
+        self.difficulty = None  # Khởi tạo độ khó là None
         self.running = True
         self.id = None  # ID để quản lý phiên làm việc
 
@@ -254,6 +255,17 @@ class Miner(threading.Thread):
         except Exception as e:
             print(f"Lỗi khi nhận dữ liệu: {e}")
             return None
+
+    def set_difficulty(self, difficulty):
+        """Cập nhật độ khó và target."""
+        self.difficulty = difficulty
+        # Tính toán lại target dựa trên độ khó
+        if difficulty > 0:
+            target = 2 ** (256 - difficulty)
+            self.target = f"{target:064x}"
+            print(f"Cập nhật độ khó: {self.difficulty}, target: {self.target}")
+        else:
+            print("Độ khó không hợp lệ!")
 
     def handle_jobs(self):
         """Nhận công việc mới từ pool."""
