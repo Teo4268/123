@@ -174,8 +174,9 @@ class w(v):
         A._target = m % target
 
 # Miner class
-class Miner:
+class Miner(threading.Thread):
     def __init__(self, pool_url, wallet, port, password, threads):
+        threading.Thread.__init__(self)
         self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
@@ -275,7 +276,22 @@ class Miner:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
 
-    
+    def run(self):
+        """Chạy miner."""
+        self.connect()
+        if not self.running:
+            return
+
+        self.subscribe()
+        if not self.running:
+            return
+
+        self.authorize()
+        if not self.running:
+            return
+
+        self.handle_jobs()
+
 # Chạy chương trình
 if __name__ == "__main__":
     pool_url = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
