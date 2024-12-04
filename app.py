@@ -137,9 +137,7 @@ class Miner:
         try:
             response = self.connection.recv(4096).decode()
             for line in response.splitlines():
-                data = json.loads(line)
-                print(f"Phản hồi nhận được: {data}")
-                return data
+                return json.loads(line)
         except Exception as e:
             print(f"Lỗi khi nhận dữ liệu: {e}")
             return None
@@ -149,18 +147,25 @@ class Miner:
         while self.running:
             try:
                 response = self.receive_json()
+                print("Phản hồi nhận được:", response)
                 if response and response.get("method") == "mining.notify":
-                    self.job = response["params"]
-                    if self.job:
-                        print(f"Nhận công việc mới: {self.job[0]}")
-                        # In tất cả các tham số của công việc
-                        print(f"job_id: {self.job[0]}, prevhash: {self.job[1]}")
-                        print(f"coinb1: {self.job[2]}, coinb2: {self.job[3]}")
-                        print(f"merkle_branch: {self.job[4]}, version: {self.job[5]}")
-                        print(f"nbits: {self.job[6]}, ntime: {self.job[7]}")
-                        print(f"clean_jobs: {self.job[8]}")
+                    job_params = response["params"]
+                    if len(job_params) > 8:
+                        job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = job_params
+                        self.job = {
+                            "job_id": job_id,
+                            "prevhash": prevhash,
+                            "coinb1": coinb1,
+                            "coinb2": coinb2,
+                            "merkle_branch": merkle_branch,
+                            "version": version,
+                            "nbits": nbits,
+                            "ntime": ntime,
+                            "clean_jobs": clean_jobs
+                        }
+                        print(f"Nhận công việc mới: {job_id}")
                     else:
-                        print("Công việc không hợp lệ.")
+                        print("Công việc không hợp lệ. Dữ liệu không đầy đủ.")
                         self.running = False
                 else:
                     print(f"Phản hồi không hợp lệ hoặc không phải 'mining.notify': {response}")
@@ -173,13 +178,22 @@ class Miner:
         while self.running:
             if self.job:
                 try:
+                    # Kiểm tra xem target đã được tính chưa
                     if self.target is None:
                         print(f"[Thread {thread_id}] Target chưa được khởi tạo, dừng khai thác.")
                         self.running = False
                         return
 
-                    job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
-                    
+                    # Tạo các tham số công việc
+                    job_id = self.job['job_id']
+                    prevhash = self.job['prevhash']
+                    coinb1 = self.job['coinb1']
+                    coinb2 = self.job['coinb2']
+                    merkle_branch = self.job['merkle_branch']
+                    version = self.job['version']
+                    nbits = self.job['nbits']
+                    ntime = self.job['ntime']
+
                     # Tạo extranonce2
                     extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
                     
@@ -217,7 +231,7 @@ class Miner:
                     print(f"[Thread {thread_id}] Lỗi khi đào: {e}")
             else:
                 print(f"[Thread {thread_id}] Công việc không hợp lệ hoặc chưa được nhận.")
-
+    
     def start(self):
         """Bắt đầu đào coin."""
         self.connect()
@@ -242,10 +256,11 @@ class Miner:
 
 
 if __name__ == "__main__":
-    pool = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
-    wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"  # Ví của bạn
-    port = 7019  # Port của pool
-    password = "c=RVN"  # Password
-    threads = 2  # Số luồng
-    miner = Miner(pool, wallet, port, password, threads)
-    miner.start()
+        pool = "minotaurx.na.mine.zpool.ca"  # Địa chỉ pool
+        wallet = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"  # Ví của bạn
+        port = 7019  # Port của pool
+        password = "c=RVN"  # Password
+        threads = 2  # Số luồng
+
+        miner = Miner(pool, wallet, port, password, threads)
+        miner.start()
