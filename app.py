@@ -3,7 +3,6 @@ import json
 import threading
 import os
 import sys
-import os
 
 q = os.path.abspath('./libs')
 sys.path.append(q)  # Sử dụng sys.path để thêm đường dẫn vào Python path
@@ -13,7 +12,6 @@ m = '%064x'
 O = Exception
 B = None
 A = property
-q = os.path.abspath('./libs')
 
 # Lớp v (cơ sở)
 class v:
@@ -80,6 +78,7 @@ class Miner:
         self.extranonce1 = None
         self.extranonce2_size = None
         self.running = True
+        self._target = None  # Thêm target ở đây
 
     def connect(self):
         """Kết nối tới pool."""
@@ -162,55 +161,56 @@ class Miner:
                 self.running = False
 
     def mine(self, thread_id):
-    """Thực hiện khai thác."""
-    while self.running:
-        if self.job:
-            try:
-                # Kiểm tra xem target đã được tính chưa
-                if self.target is None:
-                    print(f"[Thread {thread_id}] Target chưa được khởi tạo, dừng khai thác.")
-                    self.running = False
-                    return
+        """Thực hiện khai thác."""
+        while self.running:
+            if self.job:
+                try:
+                    # Kiểm tra xem target đã được tính chưa
+                    if self._target is None:
+                        print(f"[Thread {thread_id}] Target chưa được khởi tạo, dừng khai thác.")
+                        self.running = False
+                        return
 
-                job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
-                
-                # Tạo extranonce2
-                extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
-                
-                # Tạo coinbase
-                coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
-                coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
-                merkle_root = coinbase_hash_bin.hex()
-                
-                # Kết hợp merkle branch
-                for branch in merkle_branch:
-                    merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
-                
-                # Tạo block header
-                blockheader = (
-                    version
-                    + prevhash
-                    + merkle_root
-                    + nbits
-                    + ntime
-                    + "00000000"
-                )
-                blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
+                    job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
+                    
+                    # Tạo extranonce2
+                    extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
+                    
+                    # Tạo coinbase
+                    coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
+                    coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
+                    merkle_root = coinbase_hash_bin.hex()
+                    
+                    # Kết hợp merkle branch
+                    for branch in merkle_branch:
+                        merkle_root = getPoWHash(bytes.fromhex(merkle_root + branch)).hex()
+                    
+                    # Tạo block header
+                    blockheader = (
+                        version
+                        + prevhash
+                        + merkle_root
+                        + nbits
+                        + ntime
+                        + "00000000"
+                    )
+                    blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
 
-                # Kiểm tra blockhash so với target
-                if self.target is not None and int(blockhash, 16) < self.target:
-                    print(f"[Thread {thread_id}] Đào được block: {blockhash}")
-                    self.send_json({
-                        "id": 4,
-                        "method": "mining.submit",
-                        "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
-                    })
-                else:
-                    print(f"[Thread {thread_id}] Hash không đạt: {blockhash}")
-            except Exception as e:
-                print(f"[Thread {thread_id}] Lỗi khi đào: {e}")
-        else:
-            print(f"[Thread {thread_id}] Công việc không hợp lệ hoặc chưa được nhận.")
+                    # Kiểm tra blockhash so với target
+                    if self._target is not None and int(blockhash, 16) < self._target:
+                        print(f"[Thread {thread_id}] Đào được block: {blockhash}")
+                        self.send_json({
+                            "id": 4,
+                            "method": "mining.submit",
+                            "params": [self.wallet, job_id, extranonce2, ntime, "00000000"]
+                        })
+                    else:
+                        print(f"[Thread {thread_id}] Hash không đạt: {blockhash}")
+                except Exception as e:
+                    print(f"[Thread {thread_id}] Lỗi khi đào: {e}")
+            else:
+                print(f"[Thread {thread_id}] Công việc không hợp lệ hoặc chưa được nhận.")
+
     def start(self):
         """Bắt đầu đào coin."""
         self.connect()
