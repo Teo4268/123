@@ -21,43 +21,54 @@ class v:
         A._target = None
         A._worker_name = None
 
-    id = property(lambda s: s._id)
-    worker_name = property(lambda s: s._worker_name)
-    difficulty = property(lambda s: s._difficulty)
-    target = property(lambda s: s._target)
-    extranonce1 = property(lambda s: s._extranonce1)
-    extranonce2_size = property(lambda s: s._extranonce2_size)
+    # Các phương thức truy cập và thay đổi giá trị thuộc tính
+    def get_id(A):
+        return A._id
 
-    def set_worker_name(A, worker_name):
+    def set_id(A, value):
+        A._id = value
+
+    def get_worker_name(A):
+        return A._worker_name
+
+    def set_worker_name(A, value):
         if A._worker_name:
-            raise A.StateException(f'Already authenticated as {A._worker_name} (requesting {worker_name})')
-        A._worker_name = worker_name
+            raise A.StateException(f'Already authenticated as {A._worker_name} (requesting {value})')
+        A._worker_name = value
 
-    def _set_target(A, target):
-        A._target = '%064x' % target
+    def get_difficulty(A):
+        return A._difficulty
 
-    def set_difficulty(A, difficulty):
-        if difficulty < 0:
+    def set_difficulty(A, value):
+        if value < 0:
             raise A.StateException('Difficulty must be non-negative')
-        if difficulty == 0:
-            C = 2 ** 256 - 1
+        if value == 0:
+            A._difficulty = 2 ** 256 - 1
         else:
-            C = min(int((4294901760 * 2 ** (256 - 64) + 1) / difficulty - 1 + .5), 2 ** 256 - 1)
-        A._difficulty = difficulty
-        A._set_target(C)
+            A._difficulty = min(int((4294901760 * 2 ** (256 - 64) + 1) / value - 1 + .5), 2 ** 256 - 1)
+        A._set_target()
 
-# Lớp w (cơ sở mở rộng)
-class w(v):
-    ProofOfWork = getPoWHash
-    _max_nonce = 4294967295
+    def _set_target(A):
+        A._target = '%064x' % A._difficulty
 
-    def _set_target(A, target):
-        A._target = '%064x' % target
+    def get_target(A):
+        return A._target
+
+    def get_extranonce1(A):
+        return A._extranonce1
+
+    def set_extranonce1(A, value):
+        A._extranonce1 = value
+
+    def get_extranonce2_size(A):
+        return A._extranonce2_size
+
+    def set_extranonce2_size(A, value):
+        A._extranonce2_size = value
 
 # Lớp Miner
-class Miner(w):
+class Miner:
     def __init__(self, pool_url, wallet, port, password, threads):
-        super().__init__()
         self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
