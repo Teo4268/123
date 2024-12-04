@@ -66,9 +66,18 @@ class v:
     def set_extranonce2_size(A, value):
         A._extranonce2_size = value
 
+    def calculate_target(A, nbits):
+        """Tính toán target từ nbits."""
+        nbits_int = int(nbits, 16)
+        exponent = (nbits_int >> 24) & 0xFF
+        coefficient = nbits_int & 0xFFFFFF
+        return coefficient * (2 ** (8 * (exponent - 3)))
+
+
 # Lớp Miner
-class Miner:
+class Miner(v):
     def __init__(self, pool_url, wallet, port, password, threads):
+        super().__init__()  # Khởi tạo lớp cơ sở v
         self.pool_url = pool_url
         self.wallet = wallet
         self.port = port
@@ -76,9 +85,6 @@ class Miner:
         self.threads = threads
         self.connection = None
         self.job = None
-        self.extranonce1 = None
-        self.extranonce2_size = None
-        self.target = None
         self.running = True
 
     def connect(self):
@@ -100,8 +106,8 @@ class Miner:
             })
             response = self.receive_json()
             if response and "result" in response:
-                self.extranonce1 = response["result"][1]
-                self.extranonce2_size = response["result"][2]
+                self.set_extranonce1(response["result"][1])
+                self.set_extranonce2_size(response["result"][2])
                 print("Đăng ký thành công.")
         except Exception as e:
             print(f"Lỗi khi đăng ký: {e}")
@@ -152,13 +158,6 @@ class Miner:
                 print(f"Lỗi khi nhận công việc: {e}")
                 self.running = False
 
-    def calculate_target(self, nbits):
-        """Tính toán target từ nbits."""
-        nbits_int = int(nbits, 16)
-        exponent = (nbits_int >> 24) & 0xFF
-        coefficient = nbits_int & 0xFFFFFF
-        return coefficient * (2 ** (8 * (exponent - 3)))
-
     def mine(self, thread_id):
         """Thực hiện khai thác."""
         while self.running:
@@ -167,10 +166,10 @@ class Miner:
                     job_id, prevhash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = self.job
                     
                     # Tạo extranonce2
-                    extranonce2 = f"{thread_id:0{self.extranonce2_size * 2}x}"
+                    extranonce2 = f"{thread_id:0{self.get_extranonce2_size() * 2}x}"
                     
                     # Tạo coinbase
-                    coinbase = coinb1 + self.extranonce1 + extranonce2 + coinb2
+                    coinbase = coinb1 + self.get_extranonce1() + extranonce2 + coinb2
                     coinbase_hash_bin = getPoWHash(bytes.fromhex(coinbase))
                     merkle_root = coinbase_hash_bin.hex()
                     
@@ -190,7 +189,7 @@ class Miner:
                     blockhash = getPoWHash(bytes.fromhex(blockheader)).hex()
 
                     # Kiểm tra blockhash so với target
-                    if int(blockhash, 16) < self.target:
+                    if int(blockhash, 16) < self.get_target():
                         print(f"[Thread {thread_id}] Đào được block: {blockhash}")
                         self.send_json({
                             "id": 4,
