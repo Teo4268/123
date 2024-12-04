@@ -257,21 +257,21 @@ class Miner(threading.Thread):
             return None
 
     def set_difficulty(self, difficulty):
-    """Cập nhật độ khó và target."""
-    try:
-        # Chuyển đổi độ khó từ chuỗi hex thành số nguyên
-        difficulty = int(difficulty, 16)  # Chuyển từ hex sang số nguyên
-        self.difficulty = difficulty
+        """Cập nhật độ khó và target."""
+        try:
+            # Chuyển đổi độ khó từ chuỗi hex thành số nguyên
+            difficulty = int(difficulty, 16)  # Chuyển từ hex sang số nguyên
+            self.difficulty = difficulty
 
-        # Tính toán lại target dựa trên độ khó
-        if difficulty > 0:
-            target = 2 ** (256 - difficulty)
-            self.target = f"{target:064x}"
-            print(f"Cập nhật độ khó: {self.difficulty}, target: {self.target}")
-        else:
-            print("Độ khó không hợp lệ!")
-    except ValueError:
-        print(f"Lỗi: Độ khó '{difficulty}' không hợp lệ. Phải là chuỗi hex hợp lệ.")
+            # Tính toán lại target dựa trên độ khó
+            if difficulty > 0:
+                target = 2 ** (256 - difficulty)
+                self.target = f"{target:064x}"
+                print(f"Cập nhật độ khó: {self.difficulty}, target: {self.target}")
+            else:
+                print("Độ khó không hợp lệ!")
+        except ValueError:
+            print(f"Lỗi: Độ khó '{difficulty}' không hợp lệ. Phải là chuỗi hex hợp lệ.")
 
     def handle_jobs(self):
         """Nhận công việc mới từ pool."""
