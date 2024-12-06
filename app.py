@@ -11,7 +11,8 @@ WALLET_ADDRESS = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
 PASSWORD = "c=RVN"
 LOG_FILE = "miner_error.log"
 
-# Kết nối socket def connect_to_pool():
+# Kết nối socket
+def connect_to_pool():
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((POOL_ADDRESS, POOL_PORT))
@@ -36,11 +37,13 @@ def receive_json(sock):
             break
     return json.loads(buffer.decode("utf-8"))
 
-# Log lỗi def log_error(message):
+# Log lỗi
+def log_error(message):
     with open(LOG_FILE, "a") as f:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
 
-# Đào def mine():
+# Đào
+def mine():
     sock = connect_to_pool()
     
     # Gửi yêu cầu đăng nhập tới pool
@@ -62,7 +65,8 @@ def receive_json(sock):
     response = receive_json(sock)
     print("[INFO] Phản hồi authorize:", response)
 
-    # Lặp để nhận công việc và gửi kết quả while True:
+    # Lặp để nhận công việc và gửi kết quả
+    while True:
         job_request = receive_json(sock)
         if "method" in job_request and job_request["method"] == "mining.notify":
             _, job_id, prev_hash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = job_request["params"]
@@ -72,3 +76,4 @@ def receive_json(sock):
             
             # Băm dữ liệu
             header = (prev_hash + coinb1 + coinb2).encode('utf-8')
+            
