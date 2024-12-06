@@ -20,6 +20,7 @@ def connect_to_pool():
         return sock
     except Exception as e:
         log_error(f"Không thể kết nối tới pool: {e}")
+        print(f"[ERROR] Không thể kết nối tới pool: {e}")
         raise
 
 def send_json(sock, data):
@@ -41,6 +42,7 @@ def receive_json(sock):
 def log_error(message):
     with open(LOG_FILE, "a") as f:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
+    print(f"[LOG] {message}")
 
 # Đào
 def mine():
@@ -76,4 +78,3 @@ def mine():
             
             # Băm dữ liệu
             header = (prev_hash + coinb1 + coinb2).encode('utf-8')
-            
