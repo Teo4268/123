@@ -1,7 +1,7 @@
 import socket
 import time
 import logging
-from minotaurx_hash import minotaurx_hash  # Thư viện của bạn đã build
+import minotaurx_hash  # Thư viện của bạn đã build
 
 # Cấu hình logging để ghi log ra terminal
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -12,6 +12,9 @@ POOL_PORT = 7019
 WALLET_ADDRESS = 'R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q'
 WORKER_NAME = 'worker1'  # Bạn có thể thay đổi tên worker nếu cần
 PASSWORD = 'c=RVN'
+
+# Độ khó (difficulty) mà bạn sẽ kiểm tra trong PoW
+DIFFICULTY = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 # Tạo socket kết nối tới pool
 def connect_to_pool():
@@ -31,6 +34,13 @@ def send_to_pool(sock, data):
         logging.info(f"Đã gửi dữ liệu tới pool: {data}")
     except Exception as e:
         logging.error(f"Lỗi khi gửi dữ liệu tới pool: {e}")
+
+# Hàm kiểm tra Proof of Work (PoW)
+def check_pow(header, difficulty):
+    # Tính toán hash bằng minotaurx_hash
+    hash_result = minotaurx_hash.minotaurx_hash(header)
+    # Kiểm tra nếu hash nhỏ hơn độ khó
+    return int(hash_result, 16) < difficulty
 
 # Đào coin và tính toán với MinotaurX
 def mine_coin():
@@ -60,11 +70,13 @@ def mine_coin():
             # Giả sử `data_from_pool` chứa thông tin job
 
             # Tiến hành hash với minotaurx_hash
-            hash_result = minotaurx_hash(data_from_pool.encode('utf-8'))  # Sử dụng hàm hash từ thư viện của bạn
+            hash_result = minotaurx_hash.minotaurx_hash(data_from_pool.encode('utf-8'))  # Sử dụng hàm hash từ thư viện của bạn
 
-            # Gửi kết quả hash về pool
-            result_message = f'{{"id": 1, "method": "mining.submit", "params": ["{WORKER_NAME}", "{data_from_pool}", "{hash_result}"]}}\n'
-            send_to_pool(sock, result_message)
+            # Kiểm tra Proof of Work (PoW) với độ khó
+            if check_pow(data_from_pool.encode('utf-8'), DIFFICULTY):
+                # Gửi kết quả hash về pool
+                result_message = f'{{"id": 1, "method": "mining.submit", "params": ["{WORKER_NAME}", "{data_from_pool}", "{hash_result}"]}}\n'
+                send_to_pool(sock, result_message)
 
             time.sleep(1)  # Lặp lại sau 1 giây hoặc điều chỉnh theo nhu cầu
 
