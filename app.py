@@ -1,80 +1,76 @@
 import socket
-import json
 import time
-from binascii import hexlify, unhexlify
-import minotaurx_hash
+import logging
+from minotaurx_hash import minotaurx_hash  # Thư viện của bạn đã build
 
-# Cấu hình kết nối
-POOL_ADDRESS = "minotaurx.na.mine.zpool.ca"
+# Cấu hình logging để ghi log ra terminal
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+
+# Thông tin pool và ví
+POOL_HOST = 'minotaurx.na.mine.zpool.ca'
 POOL_PORT = 7019
-WALLET_ADDRESS = "R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q"
-PASSWORD = "c=RVN"
-LOG_FILE = "miner_error.log"
+WALLET_ADDRESS = 'R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q'
+WORKER_NAME = 'worker1'  # Bạn có thể thay đổi tên worker nếu cần
+PASSWORD = 'c=RVN'
 
-# Kết nối socket
+# Tạo socket kết nối tới pool
 def connect_to_pool():
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((POOL_ADDRESS, POOL_PORT))
-        print(f"[INFO] Kết nối thành công tới pool {POOL_ADDRESS}:{POOL_PORT}")
+        sock.connect((POOL_HOST, POOL_PORT))
+        logging.info(f"Đã kết nối tới pool {POOL_HOST}:{POOL_PORT}")
         return sock
     except Exception as e:
-        log_error(f"Không thể kết nối tới pool: {e}")
-        print(f"[ERROR] Không thể kết nối tới pool: {e}")
-        raise
+        logging.error(f"Lỗi khi kết nối tới pool: {e}")
+        return None
 
-def send_json(sock, data):
-    message = json.dumps(data) + "\n"
-    sock.sendall(message.encode("utf-8"))
+# Gửi dữ liệu tới pool
+def send_to_pool(sock, data):
+    try:
+        sock.sendall(data.encode('utf-8'))
+        logging.info(f"Đã gửi dữ liệu tới pool: {data}")
+    except Exception as e:
+        logging.error(f"Lỗi khi gửi dữ liệu tới pool: {e}")
 
-def receive_json(sock):
-    buffer = b""
-    while True:
-        chunk = sock.recv(1024)
-        if not chunk:
-            break
-        buffer += chunk
-        if b"\n" in buffer:
-            break
-    return json.loads(buffer.decode("utf-8"))
-
-# Log lỗi
-def log_error(message):
-    with open(LOG_FILE, "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
-    print(f"[LOG] {message}")
-
-# Đào
-def mine():
+# Đào coin và tính toán với MinotaurX
+def mine_coin():
     sock = connect_to_pool()
-    
-    # Gửi yêu cầu đăng nhập tới pool
-    login_request = {
-        "id": 1,
-        "method": "mining.subscribe",
-        "params": []
-    }
-    send_json(sock, login_request)
-    response = receive_json(sock)
-    print("[INFO] Phản hồi subscribe:", response)
+    if not sock:
+        return
 
-    authorize_request = {
-        "id": 2,
-        "method": "mining.authorize",
-        "params": [WALLET_ADDRESS, PASSWORD]
-    }
-    send_json(sock, authorize_request)
-    response = receive_json(sock)
-    print("[INFO] Phản hồi authorize:", response)
+    # Xác thực với pool
+    auth_message = '{"id": 1, "method": "mining.subscribe", "params": []}\n'
+    send_to_pool(sock, auth_message)
 
-    # Lặp để nhận công việc và gửi kết quả
+    # Gửi thông tin xác thực worker
+    worker_message = f'{{"id": 1, "method": "mining.authorize", "params": ["{WALLET_ADDRESS}.{WORKER_NAME}", "{PASSWORD}"]}}\n'
+    send_to_pool(sock, worker_message)
+
+    # Lệnh đào với thuật toán MinotaurX (ở đây bạn cần thay dữ liệu này với yêu cầu của pool cụ thể)
     while True:
-        job_request = receive_json(sock)
-        if "method" in job_request and job_request["method"] == "mining.notify":
-            _, job_id, prev_hash, coinb1, coinb2, merkle_branch, version, nbits, ntime, clean_jobs = job_request["params"]
+        try:
+            data_from_pool = sock.recv(1024).decode('utf-8')
+            if not data_from_pool:
+                break
 
-            print(f"[INFO] Nhận công việc mới: Job ID {job_id}")
-            print("[INFO] Băm block header...")
-            
-            # Băm dữ liệu
-            header = (prev_hash + coinb1 + coinb2).encode('utf-8')
+            logging.info(f"Nhận dữ liệu từ pool: {data_from_pool}")
+
+            # Giả sử pool gửi công việc dưới dạng job_data, bạn cần xử lý dữ liệu này và hash
+            # Các trường job_id, block_header, nonce và difficulty sẽ có trong dữ liệu pool gửi
+            # Giả sử `data_from_pool` chứa thông tin job
+
+            # Tiến hành hash với minotaurx_hash
+            hash_result = minotaurx_hash(data_from_pool.encode('utf-8'))  # Sử dụng hàm hash từ thư viện của bạn
+
+            # Gửi kết quả hash về pool
+            result_message = f'{{"id": 1, "method": "mining.submit", "params": ["{WORKER_NAME}", "{data_from_pool}", "{hash_result}"]}}\n'
+            send_to_pool(sock, result_message)
+
+            time.sleep(1)  # Lặp lại sau 1 giây hoặc điều chỉnh theo nhu cầu
+
+        except Exception as e:
+            logging.error(f"Lỗi trong quá trình đào: {e}")
+            break
+
+if __name__ == "__main__":
+    mine_coin()
