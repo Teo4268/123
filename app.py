@@ -1,88 +1,156 @@
-import socket
+import websocket
+import json
+import struct
+import random
 import time
-import logging
-import minotaurx_hash  # Thư viện của bạn đã build
+import threading
+import multiprocessing
+import binascii
+import queue
+import minotaurx_hash
 
-# Cấu hình logging để ghi log ra terminal
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+# Các hàm hỗ trợ MinotaurX hash
+def minotaurx_proof_of_work(header):
+    return minotaurx_hash.hash(header)  # Sử dụng MinotaurX để băm
 
-# Thông tin pool và ví
-POOL_HOST = 'minotaurx.na.mine.zpool.ca'
-POOL_PORT = 7019
-WALLET_ADDRESS = 'R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q'
-WORKER_NAME = 'worker1'  # Bạn có thể thay đổi tên worker nếu cần
-PASSWORD = 'c=RVN'
+def format_hashrate(hashrate):
+    if hashrate < 1000:
+        return f'{hashrate} B/s'
+    elif hashrate < 1000000:
+        return f'{hashrate / 1000} KB/s'
+    elif hashrate < 1000000000:
+        return f'{hashrate / 1000000} MB/s'
+    else:
+        return f'{hashrate / 1000000000} GB/s'
 
-# Độ khó (difficulty) mà bạn sẽ kiểm tra trong PoW
-DIFFICULTY = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+class Job:
+    def __init__(self, job_id, prevhash, coinb1, coinb2, merkle_branches, version, nbits, ntime, target, extranonce1, extranonce2_size):
+        self.job_id = job_id
+        self.prevhash = prevhash
+        self.coinb1 = coinb1
+        self.coinb2 = coinb2
+        self.merkle_branches = merkle_branches
+        self.version = version
+        self.nbits = nbits
+        self.ntime = ntime
+        self.target = target
+        self.extranonce1 = extranonce1
+        self.extranonce2_size = extranonce2_size
+        self.done = False
+        self.dt = 0
+        self.hash_count = 0
 
-# Tạo socket kết nối tới pool
-def connect_to_pool():
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((POOL_HOST, POOL_PORT))
-        logging.info(f"Đã kết nối tới pool {POOL_HOST}:{POOL_PORT}")
-        return sock
-    except Exception as e:
-        logging.error(f"Lỗi khi kết nối tới pool: {e}")
-        return None
+    def hashrate(self):
+        if self.dt == 0:
+            return 0
+        return self.hash_count / self.dt
 
-# Gửi dữ liệu tới pool
-def send_to_pool(sock, data):
-    try:
-        sock.sendall(data.encode('utf-8'))
-        logging.info(f"Đã gửi dữ liệu tới pool: {data}")
-    except Exception as e:
-        logging.error(f"Lỗi khi gửi dữ liệu tới pool: {e}")
+    def mine(self, nonce_start=0, nonce_end=1):
+        start_time = time.time()
+        extranonce2 = '{:0{width}x}'.format(random.randint(0, 2**(8*self.extranonce2_size)-1), self.extranonce2_size * 2)
+        extranonce2_bin = struct.pack('<I', int(extranonce2, 16)) if self.extranonce2_size <= 4 else struct.pack('<Q', int(extranonce2, 16))
+        merkle_root = self.merkle_root_bin(extranonce2_bin)
+        header = self.version + self.prevhash + merkle_root + self.ntime + self.nbits
+        for nonce in range(nonce_start, nonce_end):
+            if self.done:
+                self.dt += time.time() - start_time
+                raise StopIteration()
+            packed_nonce = struct.pack('<I', nonce)
+            pow_hash = binascii.hexlify(self.proof_of_work(header + packed_nonce)[::-1]).decode('utf-8')
+            if int(pow_hash, 16) <= int(self.target, 16):
+                self.dt += time.time() - start_time
+                yield {'job_id': self.job_id, 'extranonce2': binascii.hexlify(extranonce2_bin), 'ntime': self.ntime, 'nonce': binascii.hexlify(packed_nonce[::-1])}
+            self.hash_count += 1
+        self.dt += time.time() - start_time
 
-# Hàm kiểm tra Proof of Work (PoW)
-def check_pow(header, difficulty):
-    # Tính toán hash bằng minotaurx_hash
-    hash_result = minotaurx_hash.minotaurx_hash(header)
-    # Kiểm tra nếu hash nhỏ hơn độ khó
-    return int(hash_result, 16) < difficulty
+    def merkle_root_bin(self, extranonce2_bin):
+        coinbase = binascii.unhexlify(self.coinb1) + binascii.unhexlify(self.extranonce1) + extranonce2_bin + binascii.unhexlify(self.coinb2)
+        hash_result = minotaurx_proof_of_work(coinbase)  # Sử dụng MinotaurX để băm
+        for branch in self.merkle_branches:
+            hash_result = minotaurx_proof_of_work(hash_result + binascii.unhexlify(branch))  # Sử dụng MinotaurX để băm
+        return hash_result
 
-# Đào coin và tính toán với MinotaurX
-def mine_coin():
-    sock = connect_to_pool()
-    if not sock:
-        return
+class Subscription:
+    def __init__(self, pool_host, pool_port, username, password):
+        self.pool_host = pool_host
+        self.pool_port = pool_port
+        self.username = username
+        self.password = password
+        self.worker_name = None
+        self.target = None
+        self.job = None
 
-    # Xác thực với pool
-    auth_message = '{"id": 1, "method": "mining.subscribe", "params": []}\n'
-    send_to_pool(sock, auth_message)
+    def set_worker_name(self, worker_name):
+        self.worker_name = worker_name
 
-    # Gửi thông tin xác thực worker
-    worker_message = f'{{"id": 1, "method": "mining.authorize", "params": ["{WALLET_ADDRESS}.{WORKER_NAME}", "{PASSWORD}"]}}\n'
-    send_to_pool(sock, worker_message)
+    def set_target(self, target):
+        self.target = target
 
-    # Lệnh đào với thuật toán MinotaurX (ở đây bạn cần thay dữ liệu này với yêu cầu của pool cụ thể)
-    while True:
+    def create_job(self, job_id, prevhash, coinb1, coinb2, merkle_branches, version, nbits, ntime):
+        return Job(job_id, prevhash, coinb1, coinb2, merkle_branches, version, nbits, ntime, self.target, self.username, 4)
+
+    def proof_of_work(self, header):
+        return minotaurx_proof_of_work(header)  # Sử dụng MinotaurX để băm
+
+class Miner:
+    def __init__(self, pool_host, pool_port, username, password, threads=4, retries=5):
+        self.pool_host = pool_host
+        self.pool_port = pool_port
+        self.username = username
+        self.password = password
+        self.threads = threads
+        self.retries = retries
+        self.subscription = Subscription(pool_host, pool_port, username, password)
+        self.jobs = []
+        self.queue = queue.Queue()
+
+    def on_message(self, ws, message):
         try:
-            data_from_pool = sock.recv(1024).decode('utf-8')
-            if not data_from_pool:
-                break
-
-            logging.info(f"Nhận dữ liệu từ pool: {data_from_pool}")
-
-            # Giả sử pool gửi công việc dưới dạng job_data, bạn cần xử lý dữ liệu này và hash
-            # Các trường job_id, block_header, nonce và difficulty sẽ có trong dữ liệu pool gửi
-            # Giả sử `data_from_pool` chứa thông tin job
-
-            # Tiến hành hash với minotaurx_hash
-            hash_result = minotaurx_hash.minotaurx_hash(data_from_pool.encode('utf-8'))  # Sử dụng hàm hash từ thư viện của bạn
-
-            # Kiểm tra Proof of Work (PoW) với độ khó
-            if check_pow(data_from_pool.encode('utf-8'), DIFFICULTY):
-                # Gửi kết quả hash về pool
-                result_message = f'{{"id": 1, "method": "mining.submit", "params": ["{WORKER_NAME}", "{data_from_pool}", "{hash_result}"]}}\n'
-                send_to_pool(sock, result_message)
-
-            time.sleep(1)  # Lặp lại sau 1 giây hoặc điều chỉnh theo nhu cầu
-
+            msg = json.loads(message)
+            if msg.get('method') == 'mining.notify':
+                job_data = msg.get('params')
+                job = self.subscription.create_job(*job_data)
+                self.jobs.append(job)
+                self.start_mining(job)
         except Exception as e:
-            logging.error(f"Lỗi trong quá trình đào: {e}")
-            break
+            print(f"Error in on_message: {e}")
 
-if __name__ == "__main__":
-    mine_coin()
+    def start_mining(self, job):
+        nonce_range = self.calculate_nonce_range()
+        process = multiprocessing.Process(target=self.run_mining, args=(job, nonce_range))
+        process.start()
+
+    def run_mining(self, job, nonce_range):
+        for result in job.mine(*nonce_range):
+            self.queue.put(result)
+
+    def calculate_nonce_range(self):
+        total_range = 100000
+        return (0, total_range // self.threads)
+
+    def on_open(self, ws):
+        ws.send(json.dumps({"method": "mining.subscribe", "params": []}))
+
+    def on_error(self, ws, error):
+        print(f"Error: {error}")
+
+    def on_close(self, ws, close_status_code, close_msg):
+        print("Connection closed")
+        # Tự động kết nối lại nếu bị mất kết nối
+        for _ in range(self.retries):
+            print("Retrying to connect...")
+            time.sleep(5)
+            self.connect()
+
+    def connect(self):
+        websocket.enableTrace(False)
+        ws = websocket.WebSocketApp(f"ws://{self.pool_host}:{self.pool_port}",
+                                    on_message=self.on_message,
+                                    on_error=self.on_error,
+                                    on_close=self.on_close)
+        ws.on_open = self.on_open
+        ws.run_forever()
+
+if __name__ == '__main__':
+    miner = Miner(pool_host='minotaurx.na.mine.zpool.ca', pool_port=7019, username='R9uHDn9XXqPAe2TLsEmVoNrokmWsHREV2Q', password='c=RVN', threads=4, retries=5)
+    miner.connect()
